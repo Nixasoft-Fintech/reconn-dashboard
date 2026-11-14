@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Download, Eye, X } from "lucide-react";
+import { getReconciliationCounts } from "../../utils/reconciliation";
 
 const PAGE_SIZE = 5;
 
@@ -13,9 +14,9 @@ function downloadFile(file) {
 }
 
 function getReportSummary(record) {
-  const summary = record.result.summary;
-  const sourceCount = summary.source_record_count ?? 0;
-  const matchedCount = summary.matched_count ?? 0;
+  const { sourceCount, matchedCount } = getReconciliationCounts(
+    record.result.summary,
+  );
 
   return `${sourceCount} source rows · ${matchedCount} matched · ${Math.max(
     0,

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, Upload, X } from "lucide-react";
+import { getReconciliationCounts } from "../../utils/reconciliation";
+import { submitReconciliation } from "../../services/reconciliationApi";
 
 function formatFileSize(size) {
   if (size < 1024 * 1024) {
@@ -16,6 +18,7 @@ function UploadStep({
   files,
   onAddFiles,
   onRemoveFile,
+  disabled,
 }) {
   return (
     <section className="upload-step">
@@ -32,6 +35,7 @@ function UploadStep({
           type="file"
           accept=".csv,.xls,.xlsx"
           multiple
+          disabled={disabled}
           onChange={(event) => {
             onAddFiles(Array.from(event.target.files ?? []));
             event.target.value = "";
@@ -59,6 +63,7 @@ function UploadStep({
               <button
                 className="remove-file-button"
                 type="button"
+                disabled={disabled}
                 aria-label={`Remove ${file.name}`}
                 onClick={() => onRemoveFile(index)}
               >
@@ -72,6 +77,181 @@ function UploadStep({
   );
 }
 
+const SNAKE_GRID = { columns: 16, rows: 9, cellSize: 18 };
+const SNAKE_DIRECTIONS = {
+  up: { x: 0, y: -1 },
+  right: { x: 1, y: 0 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+};
+const LADDU_POSITIONS = [
+  { x: 11, y: 4 },
+  { x: 13, y: 2 },
+  { x: 9, y: 7 },
+  { x: 2, y: 2 },
+  { x: 6, y: 5 },
+  { x: 14, y: 6 },
+  { x: 4, y: 7 },
+];
+
+function createSnakeGame() {
+  return {
+    snake: [
+      { x: 4, y: 4 },
+      { x: 3, y: 4 },
+      { x: 2, y: 4 },
+    ],
+    direction: "right",
+    food: { x: 11, y: 4 },
+    foodIndex: 0,
+    score: 0,
+  };
+}
+
+function getNextLaddu(snake, foodIndex) {
+  for (let offset = 0; offset < LADDU_POSITIONS.length; offset += 1) {
+    const position =
+      LADDU_POSITIONS[(foodIndex + offset) % LADDU_POSITIONS.length];
+    if (!snake.some((segment) => segment.x === position.x && segment.y === position.y)) {
+      return position;
+    }
+  }
+
+  return { x: 14, y: 7 };
+}
+
+function advanceSnakeGame(game) {
+  const head = game.snake[0];
+  const reverseDirection = {
+    up: "down",
+    right: "left",
+    down: "up",
+    left: "right",
+  }[game.direction];
+  const candidates = Object.entries(SNAKE_DIRECTIONS)
+    .filter(([direction]) => direction !== reverseDirection)
+    .map(([direction, delta]) => ({
+      direction,
+      x: head.x + delta.x,
+      y: head.y + delta.y,
+    }))
+    .filter(
+      ({ x, y }) =>
+        x >= 0 &&
+        x < SNAKE_GRID.columns &&
+        y >= 0 &&
+        y < SNAKE_GRID.rows,
+    )
+    .sort((first, second) => {
+      const firstDistance =
+        Math.abs(first.x - game.food.x) + Math.abs(first.y - game.food.y);
+      const secondDistance =
+        Math.abs(second.x - game.food.x) + Math.abs(second.y - game.food.y);
+      if (firstDistance !== secondDistance) {
+        return firstDistance - secondDistance;
+      }
+
+      return Number(second.direction === game.direction) -
+        Number(first.direction === game.direction);
+    });
+  const nextHead = candidates.find(({ x, y }) => {
+    const willEat = x === game.food.x && y === game.food.y;
+    const occupied = willEat ? game.snake : game.snake.slice(0, -1);
+    return !occupied.some((segment) => segment.x === x && segment.y === y);
+  });
+
+  if (!nextHead) {
+    return createSnakeGame();
+  }
+
+  const willEat = nextHead.x === game.food.x && nextHead.y === game.food.y;
+  const snake = [
+    { x: nextHead.x, y: nextHead.y },
+    ...game.snake.slice(0, willEat ? undefined : -1),
+  ];
+  const foodIndex = willEat ? game.foodIndex + 1 : game.foodIndex;
+
+  return {
+    snake,
+    direction: nextHead.direction,
+    food: willEat ? getNextLaddu(snake, foodIndex) : game.food,
+    foodIndex,
+    score: willEat ? game.score + 1 : game.score,
+  };
+}
+
+function getGridPosition(position) {
+  return {
+    left: `${position.x * SNAKE_GRID.cellSize + 1}px`,
+    top: `${position.y * SNAKE_GRID.cellSize + 1}px`,
+  };
+}
+
+function SnackGame() {
+  const [game, setGame] = useState(createSnakeGame);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setGame(advanceSnakeGame);
+    }, 170);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="snake-game">
+      <div className="snake-game-hud">
+        <span>
+          SCORE <strong>{String(game.score).padStart(3, "0")}</strong>
+        </span>
+        <span className="snake-game-autoplay">AUTO PLAY</span>
+      </div>
+      <div
+        className="snake-game-board"
+        role="img"
+        aria-label={`Auto-playing snake game, score ${game.score}`}
+      >
+        {game.snake.slice(1).map((segment, index) => (
+          <span
+            className="snake-game-segment"
+            key={`snake-${index}`}
+            style={getGridPosition(segment)}
+          />
+        ))}
+        <span
+          className={`snake-game-head direction-${game.direction}`}
+          style={getGridPosition(game.snake[0])}
+        />
+        <span
+          className="snake-game-laddu"
+          style={getGridPosition(game.food)}
+        >
+          <span />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function UploadProgressOverlay({ progress }) {
+  return (
+    <div className="upload-progress-overlay" role="status" aria-live="polite">
+      <div className="upload-progress-card">
+        <h2>Uploading your files</h2>
+        <SnackGame />
+        <p>
+          {progress === 100
+            ? "Files uploaded! Preparing your reconciliation..."
+            : "Your files are uploading. The snake is collecting snacks!"}
+        </p>
+        <span className="upload-progress-hint">
+          Hang on — the game keeps going while we get things ready.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function ReconciliationUploadModal({
   isOpen,
   onClose,
@@ -81,6 +261,7 @@ export default function ReconciliationUploadModal({
   const [fundFiles, setFundFiles] = useState([]);
   const [statementFiles, setStatementFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [submitError, setSubmitError] = useState("");
   const [result, setResult] = useState(null);
 
@@ -107,28 +288,20 @@ export default function ReconciliationUploadModal({
     }
 
     setIsSubmitting(true);
+    setUploadProgress(0);
 
     try {
-      const formData = new FormData();
-      fundFiles.forEach((file) => formData.append("fund_request_file", file));
-      vaFiles.forEach((file) => formData.append("va_transaction_file", file));
-      statementFiles.forEach((file) =>
-        formData.append("bank_statement_file", file),
-      );
-
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiBaseUrl}/api/reconcile`, {
-        method: "POST",
-        body: formData,
+      const responseData = await submitReconciliation({
+        fundFiles,
+        vaFiles,
+        statementFiles,
+        onUploadProgress: setUploadProgress,
       });
-      const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          responseData.detail || "Reconciliation submission failed.",
-        );
+      if (typeof responseData.job_id !== "string" || !responseData.job_id) {
+        throw new Error("The reconciliation API response did not include a job ID.");
       }
 
+      setUploadProgress(100);
       setResult(responseData);
       onSubmitted({
         jobId: responseData.job_id,
@@ -165,6 +338,7 @@ export default function ReconciliationUploadModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="upload-modal-title"
+        aria-busy={isSubmitting}
         onSubmit={handleSubmit}
       >
         <header className="upload-modal-header">
@@ -177,6 +351,7 @@ export default function ReconciliationUploadModal({
             className="upload-modal-close"
             type="button"
             aria-label="Close reconciliation upload"
+            disabled={isSubmitting}
             onClick={onClose}
           >
             <X size={20} />
@@ -189,6 +364,7 @@ export default function ReconciliationUploadModal({
             title="VA Transaction"
             description="Select one or more VA transaction files."
             files={vaFiles}
+            disabled={isSubmitting}
             onAddFiles={(files) => addFiles(setVaFiles, files)}
             onRemoveFile={(index) => removeFile(setVaFiles, index)}
           />
@@ -197,6 +373,7 @@ export default function ReconciliationUploadModal({
             title="Fund Request"
             description="Select one or more fund request files."
             files={fundFiles}
+            disabled={isSubmitting}
             onAddFiles={(files) => addFiles(setFundFiles, files)}
             onRemoveFile={(index) => removeFile(setFundFiles, index)}
           />
@@ -205,6 +382,7 @@ export default function ReconciliationUploadModal({
             title="Account Statement"
             description="Select one or more account statement files."
             files={statementFiles}
+            disabled={isSubmitting}
             onAddFiles={(files) => addFiles(setStatementFiles, files)}
             onRemoveFile={(index) => removeFile(setStatementFiles, index)}
           />
@@ -214,11 +392,7 @@ export default function ReconciliationUploadModal({
             </p>
           )}
           {result && (
-            <p className="upload-submit-success" role="status">
-              Reconciliation completed: {result.summary.source_record_count}{" "}
-              source transactions processed, {result.summary.matched_count}{" "}
-              matched.
-            </p>
+            <ReconciliationSuccess result={result} />
           )}
         </div>
 
@@ -232,6 +406,7 @@ export default function ReconciliationUploadModal({
             <button
               className="upload-modal-done"
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
             >
               Close
@@ -246,6 +421,18 @@ export default function ReconciliationUploadModal({
           </div>
         </footer>
       </form>
+      {isSubmitting && <UploadProgressOverlay progress={uploadProgress} />}
     </div>
+  );
+}
+
+function ReconciliationSuccess({ result }) {
+  const { sourceCount, matchedCount } = getReconciliationCounts(result.summary);
+
+  return (
+    <p className="upload-submit-success" role="status">
+      Reconciliation completed: {matchedCount} of {sourceCount} source
+      transactions matched.
+    </p>
   );
 }

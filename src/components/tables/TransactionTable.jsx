@@ -6,7 +6,7 @@ function getStatusTone(value) {
   const status = String(value).toLowerCase();
 
   // Treat the most common failure signals as an error state.
-  if (/unmatch|mismatch|fail|error|invalid|duplicate/.test(status)) {
+  if (/unmatch|mismatch|not_found|fail|error|invalid|duplicate/.test(status)) {
     return "danger";
   }
 
@@ -43,6 +43,7 @@ export default function TransactionTable({
   companies,
   settlementTargets,
   onSettlementChange,
+  onSettle,
 }) {
   return (
     <div className="table-wrapper">
@@ -50,16 +51,16 @@ export default function TransactionTable({
         <thead>
           {/* Top-level grouping labels divide the table into its major sections. */}
           <tr>
-            <th className="transaction-group-header" colSpan={5}>
-              Fund Request Details
+            <th className="transaction-group-header" colSpan={10}>
+              Source Transaction Details
             </th>
-            <th className="transaction-group-header" colSpan={6}>
+            <th className="transaction-group-header" colSpan={8}>
               ACSMT Statement Details
             </th>
-            <th className="transaction-group-header" colSpan={5}>
+            <th className="transaction-group-header" colSpan={6}>
               Match Checks
             </th>
-            <th className="transaction-group-header" colSpan={2}>
+            <th className="transaction-group-header" colSpan={1}>
               Settlement
             </th>
           </tr>
@@ -69,14 +70,21 @@ export default function TransactionTable({
             <th>Transaction ID</th>
             <th>Row Number</th>
             <th>Reference Number</th>
-            <th>Fund Request Amount</th>
-            <th>User</th>
+            <th>Source Amount</th>
+            <th>Source User</th>
+            <th>Source Date</th>
+            <th>Source Status</th>
+            <th>Source Bank</th>
+            <th>Payment Mode</th>
+            <th>Virtual Account Number</th>
             <th>ACSMT Row</th>
+            <th>ACSMT Bank</th>
             <th>ACSMT UTR</th>
             <th>ACSMT Reference Number</th>
             <th>ACSMT Amount</th>
             <th>ACSMT User</th>
             <th>ACSMT Date</th>
+            <th>ACSMT Narration</th>
             <th>Reference Status</th>
             <th>Amount Status</th>
             <th>User Status</th>
@@ -91,7 +99,7 @@ export default function TransactionTable({
           {transactions.length === 0 ? (
             // Empty-state row shown when no items match the selected tab/filter.
             <tr>
-              <td className="table-empty-state" colSpan={18}>
+              <td className="table-empty-state" colSpan={25}>
                 No transactions found for this tab.
               </td>
             </tr>
@@ -104,12 +112,19 @@ export default function TransactionTable({
                 <td>{transaction.refNum ?? "—"}</td>
                 <td className="transaction-amount">{transaction.fundReqAmount ?? transaction.amount ?? "—"}</td>
                 <td>{transaction.user ?? "—"}</td>
+                <td>{transaction.requestDate ?? transaction.date ?? "—"}</td>
+                <td>{transaction.requestStatus ?? "—"}</td>
+                <td>{transaction.sourceBank ?? "—"}</td>
+                <td>{transaction.paymentMode ?? "—"}</td>
+                <td>{transaction.virtualAccountNumber ?? "—"}</td>
                 <td>{transaction.accountRow ?? "—"}</td>
+                <td>{transaction.accountBank ?? "—"}</td>
                 <td>{transaction.accountUtr ?? "—"}</td>
                 <td>{transaction.accountRefNumber ?? "—"}</td>
                 <td>{transaction.accountAmount ?? "—"}</td>
                 <td>{transaction.accountUser ?? "—"}</td>
                 <td>{transaction.accountDate ?? "—"}</td>
+                <td>{transaction.accountNarration ?? "—"}</td>
                 <td>
                   <StatusCell value={transaction.referenceStatus} />
                 </td>
@@ -128,29 +143,44 @@ export default function TransactionTable({
                 <td>{transaction.remark ?? "—"}</td>
                 <td>
                   {/* Only unmatched transactions can be assigned to a settlement target. */}
-                  {(transaction.finalStatus ?? transaction.status) === "Unmatched" ? (
-                    <select
-                      className="settlement-select"
-                      value={
-                        settlementTargets[transaction.txnId ?? transaction.id] ??
-                        transaction.settleWith ??
-                        ""
-                      }
-                      onChange={(event) =>
-                        onSettlementChange(
-                          transaction.txnId ?? transaction.id,
-                          event.target.value,
-                        )
-                      }
-                      aria-label={`Settle transaction ${transaction.txnId ?? transaction.id} with`}
-                    >
-                      <option value="">Select company</option>
-                      {companies.map((company) => (
-                        <option key={company.id} value={company.name}>
-                          {company.name}
-                        </option>
-                      ))}
-                    </select>
+                  {(transaction.finalStatus ?? transaction.status) ===
+                    "Unmatched" ||
+                  transaction.finalStatus === "NOT_FOUND" ? (
+                    <div className="settlement-actions">
+                      <select
+                        className="settlement-select"
+                        value={
+                          settlementTargets[transaction.txnId ?? transaction.id] ??
+                          transaction.settleWith ??
+                          ""
+                        }
+                        onChange={(event) =>
+                          onSettlementChange(
+                            transaction.txnId ?? transaction.id,
+                            event.target.value,
+                          )
+                        }
+                        aria-label={`Settle transaction ${transaction.txnId ?? transaction.id} with`}
+                      >
+                        <option value="">Select company</option>
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.name}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="settle-button"
+                        type="button"
+                        disabled={
+                          !settlementTargets[transaction.txnId ?? transaction.id] &&
+                          !transaction.settleWith
+                        }
+                        onClick={() => onSettle(transaction)}
+                      >
+                        Settle
+                      </button>
+                    </div>
                   ) : (
                     "—"
                   )}
