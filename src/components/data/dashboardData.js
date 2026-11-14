@@ -1,7 +1,7 @@
 
 export const summaryData = [
   {
-    title: "Fund Transfer",
+    title: "Fund Request",
     count: 1250,
     value: 4580000,
     icon: "send",
@@ -26,7 +26,7 @@ export const summaryData = [
 
 export const reconciliationData = [
   {
-    title: "Fund Transfer",
+    title: "Fund Request",
     matchedCount: 1180,
     matchedValue: 4250000,
     unmatchedCount: 70,
@@ -50,7 +50,7 @@ export const reconciliationData = [
 
 
 export const transactionData = {
-  "Fund Transfer": [
+  "Fund Request": [
     {
       id: "FR-10021",
       date: "14 Nov 2026",

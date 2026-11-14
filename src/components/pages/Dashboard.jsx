@@ -1,10 +1,12 @@
 
+import { useState } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import Header from "../layout/Header";
 
 import SummaryCard from "../dashboard/SummaryCard";
 import ReconciliationCard from "../dashboard/ReconciliationCard";
 import TransactionTabs from "../dashboard/TransactionTabs";
+import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
 
 import {
   summaryData,
@@ -12,9 +14,11 @@ import {
 } from "../data/dashboardData";
 
 export default function Dashboard() {
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
   return (
     <DashboardLayout>
-      <Header />
+      <Header onReconcileClick={() => setIsUploadModalOpen(true)} />
 
       <section className="summary-grid">
         {summaryData.map((item) => (
@@ -33,6 +37,10 @@ export default function Dashboard() {
      
 
       <TransactionTabs />
+      <ReconciliationUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+      />
     </DashboardLayout>
   );
 }

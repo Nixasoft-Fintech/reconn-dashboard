@@ -5,7 +5,7 @@ import { transactionData } from "../data/dashboardData";
 import TransactionTable from "../tables/TransactionTable";
 
 export default function TransactionTabs() {
-  const [selectedSource, setSelectedSource] = useState("Fund Transfer");
+  const [selectedSource, setSelectedSource] = useState("Fund Request");
   const [selectedStatus, setSelectedStatus] = useState("Matched");
   const [settlementTargets, setSettlementTargets] = useState({});
   const sourceTransactions = transactionData[selectedSource];
@@ -103,22 +103,22 @@ export default function TransactionTabs() {
       <div className="transaction-tabs">
         
         <button
-          className={selectedSource === "Fund Transfer" && selectedStatus === "Matched" ? "tab active" : "tab"}
+          className={selectedSource === "Fund Request" && selectedStatus === "Matched" ? "tab active" : "tab"}
           onClick={() => {
-            setSelectedSource("Fund Transfer");
+            setSelectedSource("Fund Request");
             setSelectedStatus("Matched");
           }}
         >
-          Fund Transfer Matched
+          Fund Request Matched
         </button>
         <button
-          className={selectedSource === "Fund Transfer" && selectedStatus === "Unmatched" ? "tab active" : "tab"}
+          className={selectedSource === "Fund Request" && selectedStatus === "Unmatched" ? "tab active" : "tab"}
           onClick={() => {
-            setSelectedSource("Fund Transfer");
+            setSelectedSource("Fund Request");
             setSelectedStatus("Unmatched");
           }}
         >
-          Fund Transfer Unmatched
+          Fund Request Unmatched
         </button>
       
         <button
