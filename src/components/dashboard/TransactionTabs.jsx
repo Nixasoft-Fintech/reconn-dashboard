@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 import { transactionData } from "../data/dashboardData";
 import TransactionTable from "../tables/TransactionTable";
 
-export default function TransactionTabs() {
+export default function TransactionTabs({ companies }) {
   const [selectedSource, setSelectedSource] = useState("Fund Request");
   const [selectedStatus, setSelectedStatus] = useState("Matched");
   const [settlementTargets, setSettlementTargets] = useState({});
@@ -162,6 +162,7 @@ export default function TransactionTabs() {
 
       <TransactionTable
         transactions={transactions}
+        companies={companies}
         settlementTargets={settlementTargets}
         onSettlementChange={handleSettlementChange}
       />

@@ -72,7 +72,11 @@ function UploadStep({
   );
 }
 
-export default function ReconciliationUploadModal({ isOpen, onClose }) {
+export default function ReconciliationUploadModal({
+  isOpen,
+  onClose,
+  onSubmitted,
+}) {
   const [vaFiles, setVaFiles] = useState([]);
   const [fundFiles, setFundFiles] = useState([]);
   const [statementFiles, setStatementFiles] = useState([]);
@@ -126,6 +130,19 @@ export default function ReconciliationUploadModal({ isOpen, onClose }) {
       }
 
       setResult(responseData);
+      onSubmitted({
+        jobId: responseData.job_id,
+        submittedAt: new Date().toISOString(),
+        files: [
+          ...vaFiles.map((file) => ({ type: "VA Transaction", file })),
+          ...fundFiles.map((file) => ({ type: "Fund Request", file })),
+          ...statementFiles.map((file) => ({
+            type: "Account Statement",
+            file,
+          })),
+        ],
+        result: responseData,
+      });
     } catch (error) {
       setSubmitError(
         error instanceof Error

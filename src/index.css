@@ -138,13 +138,17 @@ a {
 
 .nav-item {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 12px;
+  border: 0;
+  background: transparent;
   padding: 13px 14px;
   border-radius: 8px;
   color: #B8C4D6;
   font-size: 14px;
   font-weight: 500;
+  text-align: left;
   transition: 0.2s ease;
 }
 
@@ -156,6 +160,244 @@ a {
 .nav-item.active {
   color: #FFFFFF;
   background: #2B4162;
+}
+
+.utility-page-header {
+  margin-bottom: 24px;
+}
+
+.utility-page-header h1 {
+  color: #1E293B;
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.utility-page-header p {
+  margin-top: 7px;
+  color: #8490A2;
+  font-size: 13px;
+}
+
+.utility-page-card {
+  padding: 24px;
+  border: 1px solid #E8ECF2;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.utility-page-card h2 {
+  color: #25344B;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.utility-page-card p {
+  margin-top: 8px;
+  color: #8490A2;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.utility-page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.company-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 20px;
+  border: 1px solid #E8ECF2;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.company-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.company-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #DFE5ED;
+  border-radius: 7px;
+  background: #FFFFFF;
+  color: #334155;
+  font: inherit;
+}
+
+.company-form input:focus {
+  border-color: #3475D5;
+  outline: 2px solid rgba(52, 117, 213, 0.14);
+}
+
+.company-form-error {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  color: #B5473B !important;
+  font-size: 11px !important;
+}
+
+.companies-table {
+  min-width: 650px;
+}
+
+.session-note {
+  margin-top: 14px !important;
+  color: #8490A2 !important;
+  font-size: 11px !important;
+}
+
+.history-empty-state {
+  padding: 20px;
+  color: #8490A2;
+  font-size: 13px;
+  text-align: center;
+}
+
+.history-table {
+  min-width: 950px;
+}
+
+.history-table td {
+  vertical-align: top;
+  white-space: normal;
+}
+
+.history-job-id,
+.history-date {
+  display: block;
+}
+
+.history-job-id {
+  color: #3475D5;
+  font-size: 12px;
+}
+
+.history-date {
+  margin-top: 6px;
+  color: #8490A2;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.history-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 320px;
+  margin-top: 9px;
+  list-style: none;
+}
+
+.history-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-file-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+  overflow: hidden;
+  color: #334155;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.history-file-name > span {
+  color: #8490A2;
+  font-size: 9px;
+}
+
+.history-download-button,
+.history-view-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #DFE5ED;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.history-download-button:hover,
+.history-view-button:hover {
+  border-color: #B8C9E0;
+  background: #F8FAFC;
+  color: #3475D5;
+}
+
+.history-view-button {
+  color: #3475D5;
+}
+
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  color: #8490A2;
+  font-size: 11px;
+}
+
+.history-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-pagination button {
+  padding: 7px 10px;
+  border: 1px solid #DFE5ED;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #475569;
+  font-size: 11px;
+}
+
+.history-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.history-preview-modal {
+  width: min(1050px, 100%);
+}
+
+.history-preview-heading {
+  margin-bottom: 12px;
+  color: #25344B;
+  font-size: 14px;
+}
+
+.history-preview-note {
+  color: #8490A2;
+  font-size: 11px;
+}
+
+.history-preview-footer p {
+  margin: 0;
 }
 
 /* ==============================
@@ -935,6 +1177,25 @@ a {
 
   .dashboard-header-actions {
     flex-wrap: wrap;
+  }
+
+  .utility-page-header-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .company-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-pagination > div {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .upload-modal-backdrop {

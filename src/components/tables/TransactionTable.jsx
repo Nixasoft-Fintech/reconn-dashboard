@@ -1,5 +1,6 @@
 export default function TransactionTable({
   transactions,
+  companies,
   settlementTargets,
   onSettlementChange,
 }) {
@@ -66,10 +67,11 @@ export default function TransactionTable({
                     aria-label={`Settle transaction ${transaction.txnId ?? transaction.id} with`}
                   >
                     <option value="">Select company</option>
-                    <option value="Ditive">Ditive</option>
-                    <option value="Nexafin">Nexafin</option>
-                    <option value="Axiso">Axiso</option>
-                    <option value="Unionsoft">Unionsoft</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.name}>
+                        {company.name}
+                      </option>
+                    ))}
                   </select>
                 ) : (
                   "—"

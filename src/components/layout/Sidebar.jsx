@@ -1,5 +1,6 @@
 
-import { LayoutDashboard, Menu, X } from "lucide-react";
+import { Building2, History, LayoutDashboard, Menu, X } from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 export default function Sidebar({ isOpen, onToggle }) {
   return (
@@ -25,15 +26,40 @@ export default function Sidebar({ isOpen, onToggle }) {
       </div>
 
       <nav className="sidebar-nav">
-        <a
-          href="#"
-          className="nav-item active"
+        <NavLink
+          to="/"
+          end
+          className={({ isActive }) =>
+            isActive ? "nav-item active" : "nav-item"
+          }
           aria-label={isOpen ? undefined : "Dashboard"}
           title={isOpen ? undefined : "Dashboard"}
         >
           <LayoutDashboard size={19} />
           {isOpen && <span>Dashboard</span>}
-        </a>
+        </NavLink>
+        <NavLink
+          to="/companies"
+          className={({ isActive }) =>
+            isActive ? "nav-item active" : "nav-item"
+          }
+          aria-label={isOpen ? undefined : "Companies"}
+          title={isOpen ? undefined : "Companies"}
+        >
+          <Building2 size={19} />
+          {isOpen && <span>Companies</span>}
+        </NavLink>
+        <NavLink
+          to="/history"
+          className={({ isActive }) =>
+            isActive ? "nav-item active" : "nav-item"
+          }
+          aria-label={isOpen ? undefined : "History"}
+          title={isOpen ? undefined : "History"}
+        >
+          <History size={19} />
+          {isOpen && <span>History</span>}
+        </NavLink>
       </nav>
     </aside>
   );
