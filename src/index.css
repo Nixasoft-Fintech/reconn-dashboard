@@ -999,42 +999,40 @@ a {
 .transaction-tabs {
   display: flex;
   align-items: center;
-  gap: 25px;
-  border-bottom: 1px solid #E9EDF2;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 14px;
   overflow-x: auto;
+  padding: 2px 1px 5px;
+  scrollbar-width: thin;
 }
 
 .tab {
   position: relative;
-  background: none;
+  flex: 0 0 auto;
+  background: #F1F5F9;
   border: none;
-  padding: 12px 2px;
+  border-radius: 7px;
+  padding: 9px 12px;
   color: #8490A2;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   transition: 0.2s ease;
 }
 
 .tab:hover {
+  background: #E8F0FB;
   color: #3475D5;
 }
 
 .tab.active {
+  background: #E8F0FB;
   color: #3475D5;
   font-weight: 600;
 }
 
 .tab.active::after {
-  content: "";
-  position: absolute;
-  height: 2px;
-  width: 100%;
-  background: #3475D5;
-  bottom: -1px;
-  left: 0;
-  border-radius: 2px;
+  display: none;
 }
 
 /* ==============================
@@ -1044,6 +1042,10 @@ a {
 .table-wrapper {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid #E8ECF2;
+  border-radius: 9px;
+  background: #FFFFFF;
+  scrollbar-width: thin;
 }
 
 .transaction-table {
@@ -1053,8 +1055,24 @@ a {
   white-space: nowrap;
 }
 
+.transaction-data-table {
+  width: max(100%, 1700px);
+}
+
 .transaction-table thead {
   background: #F8FAFC;
+}
+
+.transaction-table .transaction-group-header {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  border-right: 1px solid #E5EAF0;
+  background: #EFF4FA;
+  color: #52647B;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .transaction-table th {
@@ -1065,8 +1083,12 @@ a {
 
 .transaction-table th,
 .transaction-table td {
-  padding: 16px 13px;
+  padding: 12px 13px;
   border-bottom: 1px solid #EDF0F4;
+}
+
+.transaction-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .transaction-table td {
@@ -1075,7 +1097,7 @@ a {
 }
 
 .transaction-table tbody tr:hover {
-  background: #FAFBFD;
+  background: #F8FAFD;
 }
 
 .transaction-id {
@@ -1088,14 +1110,71 @@ a {
   color: #1E293B !important;
 }
 
+.transaction-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.transaction-status-success {
+  background: #E7F7F0;
+  color: #16865E;
+}
+
+.transaction-status-danger {
+  background: #FFF0EB;
+  color: #C65D42;
+}
+
+.transaction-status-neutral {
+  background: #F1F5F9;
+  color: #64748B;
+}
+
+.missing-value {
+  color: #A0AABA;
+}
+
+.table-empty-state {
+  padding: 34px !important;
+  color: #8490A2 !important;
+  text-align: center;
+}
+
+.transaction-table-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 1px 9px;
+  color: #8490A2;
+  font-size: 10px;
+}
+
+.transaction-table-meta span:first-child {
+  color: #52647B;
+  font-weight: 600;
+}
+
 .settlement-select {
   min-width: 145px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   border: 1px solid #DFE5ED;
   border-radius: 6px;
   background: #FFFFFF;
   color: #334155;
   font-size: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settlement-select:focus {
+  border-color: #3475D5;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(52, 117, 213, 0.12);
 }
 
 /* ==============================
@@ -1269,12 +1348,12 @@ a {
   }
 
   .transaction-tabs {
-    gap: 18px;
+    gap: 7px;
   }
 
   .transaction-table th,
   .transaction-table td {
-    padding: 13px 10px;
+    padding: 11px 10px;
   }
 }
 

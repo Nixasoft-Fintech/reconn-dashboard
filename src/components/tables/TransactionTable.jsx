@@ -1,3 +1,29 @@
+function getStatusTone(value) {
+  const status = String(value).toLowerCase();
+
+  if (/unmatch|mismatch|fail|error|invalid|duplicate/.test(status)) {
+    return "danger";
+  }
+
+  if (/match|success|approved|pass/.test(status)) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
+function StatusCell({ value }) {
+  if (!value) {
+    return <span className="missing-value">—</span>;
+  }
+
+  return (
+    <span className={`transaction-status transaction-status-${getStatusTone(value)}`}>
+      {value}
+    </span>
+  );
+}
+
 export default function TransactionTable({
   transactions,
   companies,
@@ -6,8 +32,22 @@ export default function TransactionTable({
 }) {
   return (
     <div className="table-wrapper">
-      <table className="transaction-table">
+      <table className="transaction-table transaction-data-table">
         <thead>
+          <tr>
+            <th className="transaction-group-header" colSpan={5}>
+              Fund Request Details
+            </th>
+            <th className="transaction-group-header" colSpan={6}>
+              ACSMT Statement Details
+            </th>
+            <th className="transaction-group-header" colSpan={5}>
+              Match Checks
+            </th>
+            <th className="transaction-group-header" colSpan={2}>
+              Settlement
+            </th>
+          </tr>
           <tr>
             <th>Transaction ID</th>
             <th>Row Number</th>
@@ -30,7 +70,14 @@ export default function TransactionTable({
           </tr>
         </thead>
         <tbody>
-          {transactions.map((transaction) => (
+          {transactions.length === 0 ? (
+            <tr>
+              <td className="table-empty-state" colSpan={18}>
+                No transactions found for this tab.
+              </td>
+            </tr>
+          ) : (
+            transactions.map((transaction) => (
             <tr key={transaction.txnId ?? transaction.id}>
               <td className="transaction-id">{transaction.txnId ?? transaction.id ?? "—"}</td>
               <td>{transaction.rowNumber ?? "—"}</td>
@@ -43,11 +90,11 @@ export default function TransactionTable({
               <td>{transaction.accountAmount ?? "—"}</td>
               <td>{transaction.accountUser ?? "—"}</td>
               <td>{transaction.accountDate ?? "—"}</td>
-              <td>{transaction.referenceStatus ?? "—"}</td>
-              <td>{transaction.amountStatus ?? "—"}</td>
-              <td>{transaction.userStatus ?? "—"}</td>
-              <td>{transaction.dateStatus ?? "—"}</td>
-              <td>{transaction.finalStatus ?? transaction.status ?? "—"}</td>
+              <td><StatusCell value={transaction.referenceStatus} /></td>
+              <td><StatusCell value={transaction.amountStatus} /></td>
+              <td><StatusCell value={transaction.userStatus} /></td>
+              <td><StatusCell value={transaction.dateStatus} /></td>
+              <td><StatusCell value={transaction.finalStatus ?? transaction.status} /></td>
               <td>{transaction.remark ?? "—"}</td>
               <td>
                 {(transaction.finalStatus ?? transaction.status) === "Unmatched" ? (
@@ -78,7 +125,8 @@ export default function TransactionTable({
                 )}
               </td>
             </tr>
-          ))}
+            ))
+          )}
         </tbody>
       </table>
     </div>

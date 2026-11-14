@@ -101,7 +101,6 @@ export default function TransactionTabs({ companies }) {
       </div>
 
       <div className="transaction-tabs">
-        
         <button
           className={selectedSource === "Fund Request" && selectedStatus === "Matched" ? "tab active" : "tab"}
           onClick={() => {
@@ -158,6 +157,14 @@ export default function TransactionTabs({ companies }) {
         >
           Account Statement Unmatched
         </button>
+      </div>
+
+      <div className="transaction-table-meta">
+        <span>
+          {transactions.length}{" "}
+          {transactions.length === 1 ? "transaction" : "transactions"}
+        </span>
+        <span>Scroll horizontally to view all fields</span>
       </div>
 
       <TransactionTable
