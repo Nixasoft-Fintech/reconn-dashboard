@@ -1159,6 +1159,16 @@ a {
   border-color: #CBD5E1;
 }
 
+.export-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.export-btn:disabled:hover {
+  border-color: #DFE5ED;
+  background: #FFFFFF;
+}
+
 /* ==============================
    TRANSACTION TABS
 ============================== */

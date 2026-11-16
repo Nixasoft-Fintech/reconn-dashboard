@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Download, Search, X } from "lucide-react";
 import TransactionTable from "../tables/TransactionTable";
 import {
+  exportTransactionsCsv,
   getBankTransactions,
   getFundRequests,
   getVaTransactions,
@@ -93,6 +94,8 @@ export default function TransactionTabs({ companies, jobId }) {
   const [pageSize, setPageSize] = useState(25);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [transactionsError, setTransactionsError] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const [settlementPreview, setSettlementPreview] = useState(null);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -283,84 +286,35 @@ export default function TransactionTabs({ companies, jobId }) {
     });
   };
 
-  const exportCSV = () => {
-    const header = [
-      "Transaction ID",
-      "Row Number",
-      "Reference Number",
-      "Source Amount",
-      "Source User",
-      "Source Date",
-      "Source Status",
-      "Source Bank",
-      "Payment Mode",
-      "Virtual Account Number",
-      "ACSMT Row",
-      "ACSMT Bank",
-      "ACSMT UTR",
-      "ACSMT Reference Number",
-      "ACSMT Amount",
-      "ACSMT User",
-      "ACSMT Date",
-      "ACSMT Narration",
-      "Reference Status",
-      "Amount Status",
-      "User Status",
-      "Date Status",
-      "Final Status",
-      "Remark",
-      "Settle With",
-    ];
+  const exportCSV = async () => {
+    if (!jobId || isExporting) {
+      return;
+    }
 
-    const rows = filteredTransactions.map((item) => [
-      item.txnId ?? item.id ?? "",
-      item.rowNumber ?? "",
-      item.refNum ?? "",
-      item.fundReqAmount ?? item.amount ?? "",
-      item.user ?? "",
-      item.requestDate ?? item.date ?? "",
-      item.requestStatus ?? "",
-      item.sourceBank ?? "",
-      item.paymentMode ?? "",
-      item.virtualAccountNumber ?? "",
-      item.accountRow ?? "",
-      item.accountBank ?? "",
-      item.accountUtr ?? "",
-      item.accountRefNumber ?? "",
-      item.accountAmount ?? "",
-      item.accountUser ?? "",
-      item.accountDate ?? "",
-      item.accountNarration ?? "",
-      item.referenceStatus ?? "",
-      item.amountStatus ?? "",
-      item.userStatus ?? "",
-      item.dateStatus ?? "",
-      item.finalStatus ?? item.status ?? "",
-      item.remark ?? "",
-      settlementTargets[item.txnId ?? item.id] ?? item.settleWith ?? "",
-    ]);
+    setIsExporting(true);
+    setExportError("");
 
-    const escapeCSVCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
-    const csv = [header, ...rows]
-      .map((row) => row.map(escapeCSVCell).join(","))
-      .join("\n");
+    try {
+      const { blob, filename } = await exportTransactionsCsv(jobId, {
+        source: selectedSource,
+        status: selectedStatus === "Matched" ? "MATCHED" : "NOT_FOUND",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
 
-    const blob = new Blob([csv], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    const fileName = [selectedSource, selectedStatus]
-      .join("-")
-      .toLowerCase()
-      .replaceAll(" ", "-");
-    link.download = `${fileName}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Unable to export transactions.",
+      );
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -371,11 +325,23 @@ export default function TransactionTabs({ companies, jobId }) {
           <p>View source-wise transaction details</p>
         </div>
 
-        <button className="export-btn" onClick={exportCSV}>
+        <button
+          className="export-btn"
+          type="button"
+          onClick={exportCSV}
+          disabled={!jobId || isExporting}
+          aria-busy={isExporting}
+        >
           <Download size={16} />
-          Export CSV
+          {isExporting ? "Exporting..." : "Export CSV"}
         </button>
       </div>
+
+      {exportError && (
+        <p className="upload-submit-error" role="alert">
+          Could not export transactions: {exportError}
+        </p>
+      )}
 
       <div className="transaction-tabs">
         <button

@@ -11,10 +11,7 @@ import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
 import CompaniesPage from "./CompaniesPage";
 import HistoryPage from "./HistoryPage";
 
-import {
-  summaryData,
-  reconciliationData,
-} from "../data/dashboardData";
+
 import { getDashboardMetrics } from "../../utils/reconciliation";
 import { getReconciliationSummary } from "../../services/reconciliationApi";
 
@@ -28,12 +25,7 @@ export default function Dashboard() {
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
-  const [companies, setCompanies] = useState([
-    { id: "company-ditive", name: "Ditive" },
-    { id: "company-nexafin", name: "Nexafin" },
-    { id: "company-axiso", name: "Axiso" },
-    { id: "company-unionsoft", name: "Unionsoft" },
-  ]);
+  const [companies, setCompanies] = useState([]);
   const [historyRecords, setHistoryRecords] = useState([]);
 
   const addCompany = (company) => {
@@ -97,16 +89,10 @@ export default function Dashboard() {
     ? getDashboardMetrics(dashboardSummary)
     : activeJobId
       ? {
-          summaryData: summaryData.map((item) => ({ ...item, count: 0, value: 0 })),
-          reconciliationData: reconciliationData.map((item) => ({
-            ...item,
-            matchedCount: 0,
-            matchedValue: 0,
-            unmatchedCount: 0,
-            unmatchedValue: 0,
-          })),
+          summaryData: [],
+          reconciliationData: [],
         }
-      : { summaryData, reconciliationData };
+      : { summaryData: [], reconciliationData: [] };
 
   return (
     <DashboardLayout>

@@ -1,4 +1,9 @@
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const transactionExportPaths = {
+  "Fund Request": "fund-requests",
+  "VA Transfer": "va-transactions",
+  "Account Statement": "bank-transactions",
+};
 
 async function readResponse(response) {
   const data = await response.json().catch(() => null);
@@ -17,6 +22,49 @@ async function readResponse(response) {
   }
 
   return data;
+}
+
+async function getExportErrorMessage(response) {
+  const body = await response.text();
+  const fallbackMessage = `Request failed (${response.status}).`;
+
+  if (!body) {
+    return fallbackMessage;
+  }
+
+  try {
+    const data = JSON.parse(body);
+    const detail = data?.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item) => item.msg).join(", ")
+      : detail;
+
+    return message || fallbackMessage;
+  } catch {
+    const message = body.trim();
+    return message.startsWith("<") ? fallbackMessage : message;
+  }
+}
+
+function getExportFilename(response, fallbackFilename) {
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const encodedFilename = contentDisposition.match(
+    /filename\*=UTF-8''([^;]+)/i,
+  )?.[1];
+  const plainFilename = contentDisposition.match(
+    /filename="?([^";]+)"?/i,
+  )?.[1];
+  let filename = plainFilename;
+
+  if (encodedFilename) {
+    try {
+      filename = decodeURIComponent(encodedFilename);
+    } catch {
+      filename = plainFilename;
+    }
+  }
+
+  return filename?.split(/[\\/]/).pop() || fallbackFilename;
 }
 
 export async function submitReconciliation({
@@ -141,4 +189,42 @@ export async function getBankTransactions(
   );
 
   return readResponse(response);
+}
+
+export async function exportTransactionsCsv(
+  jobId,
+  { source, status, signal } = {},
+) {
+  const exportPath = transactionExportPaths[source];
+  if (!exportPath) {
+    throw new Error("Choose a valid transaction source to export.");
+  }
+  if (!jobId) {
+    throw new Error("Run a reconciliation before exporting transactions.");
+  }
+  if (!status) {
+    throw new Error("Choose a transaction status before exporting.");
+  }
+
+  const params = new URLSearchParams({ status });
+  const response = await fetch(
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/${exportPath}/export?${params}`,
+    {
+      signal,
+      headers: { Accept: "text/csv" },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await getExportErrorMessage(response));
+  }
+
+  const fallbackFilename = `${exportPath}-${status
+    .toLowerCase()
+    .replaceAll("_", "-")}.csv`;
+
+  return {
+    blob: await response.blob(),
+    filename: getExportFilename(response, fallbackFilename),
+  };
 }
