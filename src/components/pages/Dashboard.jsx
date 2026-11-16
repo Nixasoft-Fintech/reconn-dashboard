@@ -7,8 +7,13 @@ import Header from "../layout/Header";
 import SummaryCard from "../dashboard/SummaryCard";
 import ReconciliationCard from "../dashboard/ReconciliationCard";
 import TransactionTabs from "../dashboard/TransactionTabs";
+import {
+  ReconciliationSkeleton,
+  SummarySkeleton,
+} from "../dashboard/DataSkeletons";
 import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
 import CompaniesPage from "./CompaniesPage";
+import HistoryDetailsPage from "./HistoryDetailsPage";
 import HistoryPage from "./HistoryPage";
 
 
@@ -16,6 +21,7 @@ import { getDashboardMetrics } from "../../utils/reconciliation";
 import { getReconciliationSummary } from "../../services/reconciliationApi";
 
 const ACTIVE_JOB_ID_KEY = "bank-reconciliation-active-job-id";
+const SUMMARY_POLL_INTERVAL_MS = 10_000;
 
 export default function Dashboard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -23,20 +29,31 @@ export default function Dashboard() {
     () => window.localStorage.getItem(ACTIVE_JOB_ID_KEY) ?? "",
   );
   const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [loadedSummaryJobId, setLoadedSummaryJobId] = useState("");
+  const [completedSummaryJobId, setCompletedSummaryJobId] = useState("");
   const [summaryError, setSummaryError] = useState("");
-  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [companies, setCompanies] = useState([]);
-  const [historyRecords, setHistoryRecords] = useState([]);
+  const isDashboardLoading =
+    Boolean(activeJobId) && loadedSummaryJobId !== activeJobId;
+  const isSummaryCompleted =
+    Boolean(activeJobId) && completedSummaryJobId === activeJobId;
+  const canLoadTransactions = isSummaryCompleted && !isDashboardLoading;
 
   const addCompany = (company) => {
     setCompanies((currentCompanies) => [...currentCompanies, company]);
   };
 
   const addHistoryRecord = (record) => {
-    setHistoryRecords((currentRecords) => [record, ...currentRecords]);
     window.localStorage.setItem(ACTIVE_JOB_ID_KEY, record.jobId);
     setActiveJobId(record.jobId);
-    setDashboardSummary(record.result.summary ?? record.result);
+    const initialSummary = record.result?.summary;
+    setDashboardSummary(initialSummary ?? null);
+    setLoadedSummaryJobId(initialSummary ? record.jobId : "");
+    setCompletedSummaryJobId(
+      String(record.result?.status ?? "").trim().toUpperCase() === "COMPLETED"
+        ? record.jobId
+        : "",
+    );
     setSummaryError("");
   };
 
@@ -47,10 +64,16 @@ export default function Dashboard() {
 
     const controller = new AbortController();
     let isCurrentRequest = true;
+    let isRequestInFlight = false;
+    let isCompleted = false;
+    let intervalId;
 
     const loadSummary = async () => {
-      setIsLoadingSummary(true);
-      setSummaryError("");
+      if (!isCurrentRequest || isRequestInFlight || isCompleted) {
+        return;
+      }
+
+      isRequestInFlight = true;
 
       try {
         const response = await getReconciliationSummary(activeJobId, {
@@ -58,6 +81,15 @@ export default function Dashboard() {
         });
         if (isCurrentRequest) {
           setDashboardSummary(response.summary ?? response);
+          setLoadedSummaryJobId(activeJobId);
+          setSummaryError("");
+
+          isCompleted =
+            String(response.status ?? "").trim().toUpperCase() === "COMPLETED";
+          if (isCompleted && intervalId !== undefined) {
+            setCompletedSummaryJobId(activeJobId);
+            window.clearInterval(intervalId);
+          }
         }
       } catch (error) {
         if (
@@ -71,16 +103,18 @@ export default function Dashboard() {
           );
         }
       } finally {
-        if (isCurrentRequest) {
-          setIsLoadingSummary(false);
-        }
+        isRequestInFlight = false;
       }
     };
 
-    loadSummary();
+    void loadSummary();
+    intervalId = window.setInterval(() => {
+      void loadSummary();
+    }, SUMMARY_POLL_INTERVAL_MS);
 
     return () => {
       isCurrentRequest = false;
+      window.clearInterval(intervalId);
       controller.abort();
     };
   }, [activeJobId]);
@@ -103,30 +137,40 @@ export default function Dashboard() {
             <>
               <Header onReconcileClick={() => setIsUploadModalOpen(true)} />
 
-              {isLoadingSummary && (
-                <p className="session-note" role="status">
-                  Loading summary for job {activeJobId}...
-                </p>
-              )}
               {summaryError && (
                 <p className="upload-submit-error" role="alert">
                   Could not load summary for job {activeJobId}: {summaryError}
                 </p>
               )}
 
-              <section className="summary-grid">
-                {metrics.summaryData.map((item) => (
-                  <SummaryCard key={item.title} item={item} />
-                ))}
+              <section className="summary-grid" aria-busy={isDashboardLoading}>
+                {isDashboardLoading ? (
+                  <SummarySkeleton />
+                ) : (
+                  metrics.summaryData.map((item) => (
+                    <SummaryCard key={item.title} item={item} />
+                  ))
+                )}
               </section>
 
-              <section className="reconciliation-grid">
-                {metrics.reconciliationData.map((item) => (
-                  <ReconciliationCard key={item.title} item={item} />
-                ))}
+              <section
+                className="reconciliation-grid"
+                aria-busy={isDashboardLoading}
+              >
+                {isDashboardLoading ? (
+                  <ReconciliationSkeleton />
+                ) : (
+                  metrics.reconciliationData.map((item) => (
+                    <ReconciliationCard key={item.title} item={item} />
+                  ))
+                )}
               </section>
 
-              <TransactionTabs companies={companies} jobId={activeJobId} />
+              <TransactionTabs
+                companies={companies}
+                jobId={canLoadTransactions ? activeJobId : ""}
+                isWaitingForSummary={Boolean(activeJobId) && !canLoadTransactions}
+              />
               <ReconciliationUploadModal
                 isOpen={isUploadModalOpen}
                 onClose={() => setIsUploadModalOpen(false)}
@@ -145,8 +189,12 @@ export default function Dashboard() {
           }
         />
         <Route
+          path="/history/:jobId"
+          element={<HistoryDetailsPage />}
+        />
+        <Route
           path="/history"
-          element={<HistoryPage records={historyRecords} />}
+          element={<HistoryPage />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,252 +1,330 @@
-import { useState } from "react";
-import { Download, Eye, X } from "lucide-react";
-import { getReconciliationCounts } from "../../utils/reconciliation";
+import { useEffect, useState } from "react";
+import { Eye } from "lucide-react";
+import { Link } from "react-router-dom";
+import { getReconciliationHistory } from "../../services/reconciliationApi";
+import { getUploadedFiles } from "./uploadedFiles";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 100;
 
-function downloadFile(file) {
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.name;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+function formatNumber(value) {
+  const number = Number(value);
+  return value == null || !Number.isFinite(number)
+    ? "—"
+    : number.toLocaleString("en-IN");
 }
 
-function getReportSummary(record) {
-  const { sourceCount, matchedCount } = getReconciliationCounts(
-    record.result.summary,
-  );
-
-  return `${sourceCount} source rows · ${matchedCount} matched · ${Math.max(
-    0,
-    sourceCount - matchedCount,
-  )} not matched`;
+function formatDuration(value) {
+  const duration = Number(value);
+  return value == null || !Number.isFinite(duration)
+    ? "—"
+    : `${formatNumber(duration)} sec`;
 }
 
-function HistoryPreview({ record, onClose }) {
-  const results = record.result.results ?? [];
-  const visibleResults = results.slice(0, 20);
+function getStatusClass(status) {
+  return String(status ?? "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-");
+}
+
+function DateTimeValue({ value }) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>;
+}
+
+function FileTableCell({ files, jobId }) {
+  if (files.length === 0) {
+    return <span className="history-table-empty-value">No file</span>;
+  }
 
   return (
-    <div className="upload-modal-backdrop">
-      <section
-        className="upload-modal history-preview-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="history-preview-title"
-      >
-        <header className="upload-modal-header">
-          <div>
-            <span className="upload-modal-eyebrow">RECONCILIATION REPORT</span>
-            <h2 id="history-preview-title">Job {record.jobId}</h2>
-            <p>{getReportSummary(record)}</p>
-          </div>
-          <button
-            className="upload-modal-close"
-            type="button"
-            aria-label="Close report preview"
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-        </header>
-
-        <div className="upload-modal-content">
-          <h3 className="history-preview-heading">Transaction results</h3>
-          <div className="table-wrapper">
-            <table className="transaction-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Transaction ID</th>
-                  <th>Reference</th>
-                  <th>Amount</th>
-                  <th>Final Status</th>
-                  <th>Remark</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleResults.length === 0 ? (
-                  <tr>
-                    <td className="empty-state" colSpan={6}>
-                      No transaction results are available.
-                    </td>
-                  </tr>
-                ) : (
-                  visibleResults.map((item, index) => (
-                    <tr
-                      key={`${item.source_type}-${item.source_transaction_id}-${index}`}
-                    >
-                      <td>{item.source_type ?? "—"}</td>
-                      <td>{item.source_transaction_id ?? "—"}</td>
-                      <td>{item.source_reference ?? "—"}</td>
-                      <td>{item.source_amount ?? "—"}</td>
-                      <td>{item.final_status ?? "—"}</td>
-                      <td>{item.exception_reason ?? "—"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {results.length > visibleResults.length && (
-            <p className="history-preview-note">
-              Showing the first {visibleResults.length} of {results.length}{" "}
-              transactions.
+    <ul
+      className="history-table-files"
+      tabIndex={0}
+      aria-label={`Uploaded files for job ${jobId}`}
+    >
+      {files.map((file, index) => (
+        <li
+          className="history-table-file"
+          key={`${file.bankName ?? ""}-${file.name}-${index}`}
+        >
+          <span className="history-table-file-name">{file.name}</span>
+          {file.format && (
+            <p className="history-table-file-meta">
+              <strong>Format:</strong> {file.format}
             </p>
           )}
-        </div>
+          {file.accountHolder && (
+            <p className="history-table-file-meta">
+              <strong>Account name:</strong> {file.accountHolder}
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
-        <footer className="upload-modal-footer history-preview-footer">
-          <p>
-            Submitted{" "}
-            {new Date(record.submittedAt).toLocaleString()}
-          </p>
-          <button
-            className="upload-modal-done"
-            type="button"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </footer>
-      </section>
+function HistoryTableRow({ record, rowNumber }) {
+  const files = getUploadedFiles(record);
+
+  return (
+    <tr>
+      <td className="history-table-row-number">{rowNumber}</td>
+      <th className="history-table-job-id" scope="row">
+        {record.job_id}
+      </th>
+      <td>
+        <span
+          className={`history-status history-status-${getStatusClass(record.status)}`}
+        >
+          {record.status ?? "Unknown"}
+        </span>
+      </td>
+      <td>
+        <DateTimeValue value={record.created_at} />
+      </td>
+      <td>{formatDuration(record.processing_duration_seconds)}</td>
+      <td>
+        <FileTableCell files={files} jobId={record.job_id} />
+      </td>
+      <td>
+        <Link
+          className="history-view-button"
+          to={`/history/${encodeURIComponent(record.job_id)}`}
+          aria-label={`View details for reconciliation job ${record.job_id}`}
+        >
+          <Eye size={16} aria-hidden="true" />
+          Details
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
+function HistoryTable({ items, loading = false, startIndex = 0 }) {
+  return (
+    <div
+      className="history-table-scroll"
+      role="region"
+      aria-label="Reconciliation history table"
+      tabIndex={0}
+    >
+      <table className="history-table" aria-busy={loading}>
+        <caption className="visually-hidden">
+          Reconciliation jobs and their uploaded files
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">No.</th>
+            <th scope="col">Job ID</th>
+            <th scope="col">Status</th>
+            <th scope="col">Created</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Uploaded files</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading
+            ? Array.from({ length: 6 }, (_, index) => (
+                <tr className="history-table-skeleton-row" key={index}>
+                {Array.from({ length: 7 }, (_, cellIndex) => (
+                    <td key={cellIndex}>
+                      <span className="history-skeleton-line" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            : items.map((record, index) => (
+                <HistoryTableRow
+                  key={record.job_id}
+                  record={record}
+                  rowNumber={startIndex + index + 1}
+                />
+              ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-export default function HistoryPage({ records }) {
+export default function HistoryPage() {
+  const [history, setHistory] = useState({
+    items: [],
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrevious: false,
+  });
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedRecord, setSelectedRecord] = useState(null);
-  const pageCount = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
-  const firstRecordIndex = (currentPage - 1) * PAGE_SIZE;
-  const pageRecords = records.slice(
-    firstRecordIndex,
-    firstRecordIndex + PAGE_SIZE,
-  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isCurrentRequest = true;
+
+    const loadHistory = async () => {
+      setIsLoading(true);
+      setError("");
+      setHistory({
+        items: [],
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrevious: false,
+      });
+
+      try {
+        const response = await getReconciliationHistory({
+          page: currentPage,
+          limit: PAGE_SIZE,
+          signal: controller.signal,
+        });
+        if (!Array.isArray(response.items)) {
+          throw new Error("The history API returned an invalid item list.");
+        }
+        if (
+          response.items.some(
+            (item) => !item || typeof item.job_id !== "string" || !item.job_id,
+          )
+        ) {
+          throw new Error("The history API returned an item without a job ID.");
+        }
+
+        const total = Number(response.total ?? response.items.length);
+        const totalPages = Number(
+          response.total_pages ?? Math.ceil(total / PAGE_SIZE),
+        );
+        if (
+          !Number.isFinite(total) ||
+          total < 0 ||
+          !Number.isFinite(totalPages) ||
+          totalPages < 0
+        ) {
+          throw new Error("The history API returned invalid pagination details.");
+        }
+
+        if (isCurrentRequest) {
+          setHistory({
+            items: response.items,
+            total,
+            totalPages,
+            hasNext: response.has_next === true || currentPage < totalPages,
+            hasPrevious:
+              response.has_previous === true || currentPage > 1,
+          });
+        }
+      } catch (requestError) {
+        if (
+          isCurrentRequest &&
+          !(requestError instanceof Error && requestError.name === "AbortError")
+        ) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Unable to load reconciliation history.",
+          );
+        }
+      } finally {
+        if (isCurrentRequest) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      isCurrentRequest = false;
+      controller.abort();
+    };
+  }, [currentPage]);
+
+  const firstItem = history.total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastItem = Math.min(currentPage * PAGE_SIZE, history.total);
 
   return (
-    <section className="utility-page">
-      <header className="utility-page-header">
-        <h1>History</h1>
-        <p>Review reconciliation jobs, uploaded files, and reports.</p>
+    <section className="utility-page" aria-labelledby="history-page-title">
+      <header className="utility-page-header history-page-header">
+        <div>
+          <span className="page-kicker">RECONCILIATION RECORDS</span>
+          <h1 id="history-page-title">History</h1>
+          <p>One row per job with its uploaded files.</p>
+        </div>
       </header>
 
-      <div className="utility-page-card">
-        {records.length === 0 ? (
-          <p className="history-empty-state">
-            No reconciliation jobs yet. Submitted jobs will appear here for
-            this browser session.
-          </p>
-        ) : (
+      <div
+        className="utility-page-card history-page-card"
+        aria-busy={isLoading}
+      >
+        {isLoading && (
           <>
-            <div className="table-wrapper">
-              <table className="transaction-table history-table">
-                <thead>
-                  <tr>
-                    <th>Job ID</th>
-                    <th>Uploaded Files</th>
-                    <th>Short Report</th>
-                    <th>Report</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRecords.map((record) => (
-                    <tr key={record.jobId}>
-                      <td>
-                        <strong className="history-job-id">
-                          {record.jobId}
-                        </strong>
-                        <span className="history-date">
-                          {new Date(record.submittedAt).toLocaleString()}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>{record.files.length} files</strong>
-                        <ul className="history-file-list">
-                          {record.files.map(({ type, file }, index) => (
-                            <li
-                              className="history-file-item"
-                              key={`${record.jobId}-${file.name}-${index}`}
-                            >
-                              <span className="history-file-name">
-                                <span>{type}</span>
-                                {file.name}
-                              </span>
-                              <button
-                                className="history-download-button"
-                                type="button"
-                                onClick={() => downloadFile(file)}
-                              >
-                                <Download size={14} />
-                                Download
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </td>
-                      <td>{getReportSummary(record)}</td>
-                      <td>
-                        <button
-                          className="history-view-button"
-                          type="button"
-                          onClick={() => setSelectedRecord(record)}
-                        >
-                          <Eye size={15} />
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="history-pagination">
-              <span>
-                Showing {firstRecordIndex + 1}–
-                {Math.min(firstRecordIndex + PAGE_SIZE, records.length)} of{" "}
-                {records.length} jobs
-              </span>
-              <div>
-                <button
-                  type="button"
-                  disabled={currentPage === 1}
-                  onClick={() =>
-                    setCurrentPage((page) => Math.max(1, page - 1))
-                  }
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage === pageCount}
-                  onClick={() =>
-                    setCurrentPage((page) => Math.min(pageCount, page + 1))
-                  }
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <p className="visually-hidden" role="status">
+              Loading reconciliation history.
+            </p>
+            <HistoryTable items={[]} loading />
           </>
         )}
-        <p className="session-note">
-          Job history and uploaded files are kept only for this browser
-          session; the backend does not persist them yet.
-        </p>
-      </div>
+        {error && (
+          <p className="upload-submit-error" role="alert">
+            Could not load reconciliation history: {error}
+          </p>
+        )}
+        {!isLoading && !error && history.items.length === 0 && (
+          <p className="history-page-message" role="status">
+            No reconciliation jobs found.
+          </p>
+        )}
+        {!isLoading && !error && history.items.length > 0 && (
+          <HistoryTable
+            items={history.items}
+            startIndex={(currentPage - 1) * PAGE_SIZE}
+          />
+        )}
 
-      {selectedRecord && (
-        <HistoryPreview
-          record={selectedRecord}
-          onClose={() => setSelectedRecord(null)}
-        />
-      )}
+        {!isLoading && !error && history.total > 0 && (
+          <nav className="history-pagination" aria-label="History pagination">
+            <p aria-live="polite" aria-atomic="true">
+              Showing {firstItem}–{lastItem} of {formatNumber(history.total)} jobs
+            </p>
+            <div className="history-pagination-controls">
+              <button
+                type="button"
+                aria-label="Go to previous history page"
+                disabled={!history.hasPrevious}
+                onClick={() =>
+                  setCurrentPage((page) => Math.max(1, page - 1))
+                }
+              >
+                Previous
+              </button>
+              <span>
+                Page <span aria-current="page">{currentPage}</span> of{" "}
+                {Math.max(history.totalPages, 1)}
+              </span>
+              <button
+                type="button"
+                aria-label="Go to next history page"
+                disabled={!history.hasNext}
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(history.totalPages, page + 1))
+                }
+              >
+                Next
+              </button>
+            </div>
+          </nav>
+        )}
+      </div>
     </section>
   );
 }

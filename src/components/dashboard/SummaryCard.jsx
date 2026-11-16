@@ -3,7 +3,6 @@ import {
   Send,
   ArrowLeftRight,
   FileText,
-  IndianRupee,
 } from "lucide-react";
 
 const icons = {

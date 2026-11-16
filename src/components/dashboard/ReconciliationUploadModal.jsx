@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FileText, Upload, X } from "lucide-react";
+import { useState } from "react";
+import { FileText, MousePointerClick, Upload, X } from "lucide-react";
 import { getReconciliationCounts } from "../../utils/reconciliation";
 import { submitReconciliation } from "../../services/reconciliationApi";
 
@@ -77,177 +77,74 @@ function UploadStep({
   );
 }
 
-const SNAKE_GRID = { columns: 16, rows: 9, cellSize: 18 };
-const SNAKE_DIRECTIONS = {
-  up: { x: 0, y: -1 },
-  right: { x: 1, y: 0 },
-  down: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-};
-const LADDU_POSITIONS = [
-  { x: 11, y: 4 },
-  { x: 13, y: 2 },
-  { x: 9, y: 7 },
-  { x: 2, y: 2 },
-  { x: 6, y: 5 },
-  { x: 14, y: 6 },
-  { x: 4, y: 7 },
-];
-
-function createSnakeGame() {
-  return {
-    snake: [
-      { x: 4, y: 4 },
-      { x: 3, y: 4 },
-      { x: 2, y: 4 },
-    ],
-    direction: "right",
-    food: { x: 11, y: 4 },
-    foodIndex: 0,
-    score: 0,
-  };
-}
-
-function getNextLaddu(snake, foodIndex) {
-  for (let offset = 0; offset < LADDU_POSITIONS.length; offset += 1) {
-    const position =
-      LADDU_POSITIONS[(foodIndex + offset) % LADDU_POSITIONS.length];
-    if (!snake.some((segment) => segment.x === position.x && segment.y === position.y)) {
-      return position;
-    }
-  }
-
-  return { x: 14, y: 7 };
-}
-
-function advanceSnakeGame(game) {
-  const head = game.snake[0];
-  const reverseDirection = {
-    up: "down",
-    right: "left",
-    down: "up",
-    left: "right",
-  }[game.direction];
-  const candidates = Object.entries(SNAKE_DIRECTIONS)
-    .filter(([direction]) => direction !== reverseDirection)
-    .map(([direction, delta]) => ({
-      direction,
-      x: head.x + delta.x,
-      y: head.y + delta.y,
-    }))
-    .filter(
-      ({ x, y }) =>
-        x >= 0 &&
-        x < SNAKE_GRID.columns &&
-        y >= 0 &&
-        y < SNAKE_GRID.rows,
-    )
-    .sort((first, second) => {
-      const firstDistance =
-        Math.abs(first.x - game.food.x) + Math.abs(first.y - game.food.y);
-      const secondDistance =
-        Math.abs(second.x - game.food.x) + Math.abs(second.y - game.food.y);
-      if (firstDistance !== secondDistance) {
-        return firstDistance - secondDistance;
-      }
-
-      return Number(second.direction === game.direction) -
-        Number(first.direction === game.direction);
-    });
-  const nextHead = candidates.find(({ x, y }) => {
-    const willEat = x === game.food.x && y === game.food.y;
-    const occupied = willEat ? game.snake : game.snake.slice(0, -1);
-    return !occupied.some((segment) => segment.x === x && segment.y === y);
-  });
-
-  if (!nextHead) {
-    return createSnakeGame();
-  }
-
-  const willEat = nextHead.x === game.food.x && nextHead.y === game.food.y;
-  const snake = [
-    { x: nextHead.x, y: nextHead.y },
-    ...game.snake.slice(0, willEat ? undefined : -1),
-  ];
-  const foodIndex = willEat ? game.foodIndex + 1 : game.foodIndex;
-
-  return {
-    snake,
-    direction: nextHead.direction,
-    food: willEat ? getNextLaddu(snake, foodIndex) : game.food,
-    foodIndex,
-    score: willEat ? game.score + 1 : game.score,
-  };
-}
-
-function getGridPosition(position) {
-  return {
-    left: `${position.x * SNAKE_GRID.cellSize + 1}px`,
-    top: `${position.y * SNAKE_GRID.cellSize + 1}px`,
-  };
-}
-
-function SnackGame() {
-  const [game, setGame] = useState(createSnakeGame);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setGame(advanceSnakeGame);
-    }, 170);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="snake-game">
-      <div className="snake-game-hud">
-        <span>
-          SCORE <strong>{String(game.score).padStart(3, "0")}</strong>
-        </span>
-        <span className="snake-game-autoplay">AUTO PLAY</span>
-      </div>
-      <div
-        className="snake-game-board"
-        role="img"
-        aria-label={`Auto-playing snake game, score ${game.score}`}
-      >
-        {game.snake.slice(1).map((segment, index) => (
-          <span
-            className="snake-game-segment"
-            key={`snake-${index}`}
-            style={getGridPosition(segment)}
-          />
-        ))}
-        <span
-          className={`snake-game-head direction-${game.direction}`}
-          style={getGridPosition(game.snake[0])}
-        />
-        <span
-          className="snake-game-laddu"
-          style={getGridPosition(game.food)}
-        >
-          <span />
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function UploadProgressOverlay({ progress }) {
+  const isAwaitingResult = progress >= 100;
+
   return (
-    <div className="upload-progress-overlay" role="status" aria-live="polite">
-      <div className="upload-progress-card">
-        <h2>Uploading your files</h2>
-        <SnackGame />
-        <p>
-          {progress === 100
-            ? "Files uploaded! Preparing your reconciliation..."
-            : "Your files are uploading. The snake is collecting snacks!"}
-        </p>
-        <span className="upload-progress-hint">
-          Hang on — the game keeps going while we get things ready.
-        </span>
-      </div>
+    <div className="upload-progress-overlay">
+      <section className="upload-progress-panel" aria-busy="true">
+        <div className="upload-progress-visual" aria-hidden="true">
+          <div className="upload-animation-scene">
+            <span className="upload-animation-orbit upload-animation-orbit-one" />
+            <span className="upload-animation-orbit upload-animation-orbit-two" />
+            <div className="upload-animation-sheet upload-animation-sheet-back">
+              <FileText size={22} />
+            </div>
+            <div className="upload-animation-sheet upload-animation-sheet-front">
+              <FileText size={22} />
+            </div>
+            <div className="upload-animation-target">
+              <Upload size={24} />
+            </div>
+            <span className="upload-animation-ripple" />
+            <div className="upload-animation-pointer">
+              <MousePointerClick size={37} />
+            </div>
+          </div>
+          <span className="upload-progress-visual-label">SECURE DATA TRANSFER</span>
+        </div>
+
+        <div className="upload-progress-content">
+          <div className="upload-progress-heading">
+            <span className="upload-modal-eyebrow">RECONCILIATION IN PROGRESS</span>
+            <h2>
+              {isAwaitingResult ? "Upload complete" : "Uploading your files"}
+            </h2>
+            <p>
+              {isAwaitingResult
+                ? "Your files are in. We’re getting the reconciliation ready."
+                : "Your files are on their way. Keep this window open for just a moment."}
+            </p>
+          </div>
+
+          <ul className="upload-progress-sources" aria-label="Files included">
+            {["VA transactions", "Fund requests", "Account statements"].map(
+              (label) => (
+                <li className="upload-progress-source" key={label}>
+                  <FileText size={15} aria-hidden="true" />
+                  {label}
+                </li>
+              ),
+            )}
+          </ul>
+
+          <div
+            className="upload-progress-status"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="upload-progress-status-dot" aria-hidden="true" />
+            {isAwaitingResult
+              ? "Preparing your reconciliation"
+              : "Sending your files securely"}
+            <span className="upload-progress-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -420,8 +317,10 @@ export default function ReconciliationUploadModal({
             </button>
           </div>
         </footer>
+        {isSubmitting && (
+          <UploadProgressOverlay progress={uploadProgress} />
+        )}
       </form>
-      {isSubmitting && <UploadProgressOverlay progress={uploadProgress} />}
     </div>
   );
 }

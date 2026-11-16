@@ -140,6 +140,32 @@ export async function getReconciliationSummary(jobId, { signal } = {}) {
   return readResponse(response);
 }
 
+export async function getReconciliationHistory({
+  page = 1,
+  limit = 100,
+  signal,
+} = {}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  const response = await fetch(
+    `${apiBaseUrl}/api/reconciliation/history?${params}`,
+    { signal },
+  );
+
+  return readResponse(response);
+}
+
+export async function getReconciliationHistoryDetails(jobId, { signal } = {}) {
+  const response = await fetch(
+    `${apiBaseUrl}/api/reconciliation/history/${encodeURIComponent(jobId)}`,
+    { signal },
+  );
+
+  return readResponse(response);
+}
+
 export async function getFundRequests(
   jobId,
   { status = "NOT_FOUND", page = 1, limit = 100, signal } = {},

@@ -74,7 +74,11 @@ function matchesTransactionSearch(transaction, settlementTarget, query) {
   );
 }
 
-export default function TransactionTabs({ companies, jobId }) {
+export default function TransactionTabs({
+  companies,
+  jobId,
+  isWaitingForSummary = false,
+}) {
   const [selectedSource, setSelectedSource] = useState("Fund Request");
   const [selectedStatus, setSelectedStatus] = useState("Matched");
   const [settlementTargets, setSettlementTargets] = useState({});
@@ -85,6 +89,7 @@ export default function TransactionTabs({ companies, jobId }) {
     hasNext: false,
     hasPrevious: false,
   });
+  const [loadedSelection, setLoadedSelection] = useState(null);
   const [pageSelection, setPageSelection] = useState({
     jobId: "",
     source: "",
@@ -109,6 +114,16 @@ export default function TransactionTabs({ companies, jobId }) {
     selectedSource === "Fund Request" ||
     selectedSource === "VA Transfer" ||
     selectedSource === "Account Statement";
+  const isLoadedSelectionCurrent =
+    loadedSelection?.jobId === jobId &&
+    loadedSelection?.source === selectedSource &&
+    loadedSelection?.status === selectedStatus &&
+    loadedSelection?.page === currentPage &&
+    loadedSelection?.pageSize === pageSize;
+  const isLoadingDisplayedData =
+    isWaitingForSummary ||
+    isLoadingTransactions ||
+    Boolean(jobId && isLiveSource && !isLoadedSelectionCurrent);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -125,6 +140,13 @@ export default function TransactionTabs({ companies, jobId }) {
 
     const controller = new AbortController();
     let isCurrentRequest = true;
+    const requestSelection = {
+      jobId,
+      source: selectedSource,
+      status: selectedStatus,
+      page: currentPage,
+      pageSize,
+    };
 
     const loadTransactions = async () => {
       setTransactionPage({
@@ -177,6 +199,7 @@ export default function TransactionTabs({ companies, jobId }) {
             hasPrevious:
               response.has_previous === true || currentPage > 1,
           });
+          setLoadedSelection(requestSelection);
         }
       } catch (error) {
         if (
@@ -188,6 +211,7 @@ export default function TransactionTabs({ companies, jobId }) {
               ? error.message
               : "Unable to load reconciliation transactions.",
           );
+          setLoadedSelection(requestSelection);
         }
       } finally {
         if (isCurrentRequest) {
@@ -230,13 +254,17 @@ export default function TransactionTabs({ companies, jobId }) {
   const displayedCount = debouncedSearch
     ? filteredTransactions.length
     : transactionCount;
-  const transactionCountTone = isLoadingTransactions || isSearchPending
+  const isLoadingTransactionsOrSearch =
+    isLoadingDisplayedData || isSearchPending;
+  const transactionCountTone = isLoadingTransactionsOrSearch
     ? "loading"
     : displayedCount > 0
       ? "success"
       : "danger";
-  const transactionCountLabel = isLoadingTransactions
-    ? "Loading transactions..."
+  const transactionCountLabel = isWaitingForSummary
+    ? "Waiting for reconciliation..."
+    : isLoadingTransactionsOrSearch
+      ? "Loading transactions..."
     : isSearchPending
       ? "Updating search..."
       : debouncedSearch
@@ -329,7 +357,7 @@ export default function TransactionTabs({ companies, jobId }) {
           className="export-btn"
           type="button"
           onClick={exportCSV}
-          disabled={!jobId || isExporting}
+          disabled={!jobId || isWaitingForSummary || isExporting}
           aria-busy={isExporting}
         >
           <Download size={16} />
@@ -428,7 +456,7 @@ export default function TransactionTabs({ companies, jobId }) {
         <span>Scroll horizontally to view all fields</span>
       </div>
 
-      {isLiveSource && !jobId && (
+      {isLiveSource && !jobId && !isWaitingForSummary && (
         <p className="session-note">
           Run a reconciliation to view transactions.
         </p>
@@ -442,7 +470,7 @@ export default function TransactionTabs({ companies, jobId }) {
       <TransactionTable
         id="transaction-records-table"
         transactions={filteredTransactions}
-        isLoading={isLoadingTransactions || isSearchPending}
+        isLoading={isLoadingTransactionsOrSearch}
         emptyMessage={
           debouncedSearch
             ? `No transaction found for "${searchText.trim()}".`
@@ -459,7 +487,7 @@ export default function TransactionTabs({ companies, jobId }) {
             Rows per page
             <select
               value={pageSize}
-              disabled={isLoadingTransactions}
+              disabled={isLoadingTransactionsOrSearch}
               onChange={(event) => {
                 const nextPageSize = Number(event.target.value);
                 setPageSize(nextPageSize);
@@ -484,7 +512,7 @@ export default function TransactionTabs({ companies, jobId }) {
             </span>
             <button
               type="button"
-              disabled={!transactionPage.hasPrevious || isLoadingTransactions}
+              disabled={!transactionPage.hasPrevious || isLoadingTransactionsOrSearch}
               onClick={() =>
                 setPageSelection({
                   jobId,
@@ -498,7 +526,7 @@ export default function TransactionTabs({ companies, jobId }) {
             </button>
             <button
               type="button"
-              disabled={!transactionPage.hasNext || isLoadingTransactions}
+              disabled={!transactionPage.hasNext || isLoadingTransactionsOrSearch}
               onClick={() =>
                 setPageSelection({
                   jobId,

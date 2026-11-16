@@ -10,8 +10,13 @@ export default function Sidebar({ isOpen, onToggle }) {
     >
       <div className="sidebar-header">
         <div className="brand">
-          <div className="brand-logo">N</div>
-          {isOpen && <span>NexaFin</span>}
+          <div className="brand-logo" aria-hidden="true">N</div>
+          {isOpen && (
+            <span className="brand-name">
+              <strong>NexaFin</strong>
+              <small>FINANCE OPERATIONS</small>
+            </span>
+          )}
         </div>
         <button
           className="sidebar-toggle"
@@ -61,6 +66,12 @@ export default function Sidebar({ isOpen, onToggle }) {
           {isOpen && <span>History</span>}
         </NavLink>
       </nav>
+      {isOpen && (
+        <div className="sidebar-footer">
+          <span className="sidebar-footer-mark" aria-hidden="true" />
+          Reconciliation workspace
+        </div>
+      )}
     </aside>
   );
 }
