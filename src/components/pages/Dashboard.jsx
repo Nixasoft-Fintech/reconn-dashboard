@@ -190,7 +190,7 @@ export default function Dashboard() {
         />
         <Route
           path="/history/:jobId"
-          element={<HistoryDetailsPage />}
+          element={<HistoryDetailsPage companies={companies} />}
         />
         <Route
           path="/history"

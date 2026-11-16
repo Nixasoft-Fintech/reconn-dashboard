@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import TransactionTabs from "../dashboard/TransactionTabs";
 import { getReconciliationHistoryDetails } from "../../services/reconciliationApi";
 import HistoryFiles from "./HistoryFiles";
 
@@ -56,7 +57,7 @@ function SourceSummary({ title, summary = {} }) {
   );
 }
 
-export default function HistoryDetailsPage() {
+export default function HistoryDetailsPage({ companies = [] }) {
   const { jobId } = useParams();
   const [record, setRecord] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -115,14 +116,18 @@ export default function HistoryDetailsPage() {
   const currentRecord = record?.job_id === jobId ? record : null;
 
   return (
-    <section className="utility-page" aria-labelledby="history-detail-title">
+    <section
+      className="utility-page history-detail-page"
+      aria-labelledby="history-detail-title"
+    >
       <header className="utility-page-header history-detail-header">
         <div>
           <Link className="history-back-link" to="/history">
             <ArrowLeft size={16} aria-hidden="true" />
             Back to history
           </Link>
-          <h1 id="history-detail-title">Reconciliation details</h1>
+          <span className="page-kicker">RECONCILIATION HISTORY</span>
+          <h1 id="history-detail-title">Job details</h1>
           <p className="history-detail-job-id">Job {jobId}</p>
         </div>
         {currentRecord?.status && (
@@ -134,71 +139,80 @@ export default function HistoryDetailsPage() {
         )}
       </header>
 
-      {isLoading && (
-        <p className="session-note" role="status">
-          Loading reconciliation details...
-        </p>
-      )}
-      {error && (
-        <p className="upload-submit-error" role="alert">
-          Could not load job details: {error}
-        </p>
-      )}
+      <div className="history-detail-data" aria-busy={isLoading}>
+        {isLoading && (
+          <p className="session-note" role="status">
+            Loading reconciliation details...
+          </p>
+        )}
+        {error && (
+          <p className="upload-submit-error" role="alert">
+            Could not load job details: {error}
+          </p>
+        )}
 
-      {currentRecord && (
-        <>
-          <section className="history-detail-card history-job-overview">
-            <h2>Job information</h2>
-            <dl className="history-detail-fields">
-              <div>
-                <dt>Job ID</dt>
-                <dd>{currentRecord.job_id}</dd>
-              </div>
-              <div>
-                <dt>Created</dt>
-                <dd>{formatDateTime(currentRecord.created_at)}</dd>
-              </div>
-              <div>
-                <dt>Completed</dt>
-                <dd>{formatDateTime(currentRecord.completed_at)}</dd>
-              </div>
-              <div>
-                <dt>Processing duration</dt>
-                <dd>{formatDuration(currentRecord.processing_duration_seconds)}</dd>
-              </div>
-            </dl>
-          </section>
+        {currentRecord && (
+          <>
+            <section className="history-detail-card history-job-overview">
+              <h2>Job information</h2>
+              <dl className="history-detail-fields">
+                <div>
+                  <dt>Job ID</dt>
+                  <dd>{currentRecord.job_id}</dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{formatDateTime(currentRecord.created_at)}</dd>
+                </div>
+                <div>
+                  <dt>Completed</dt>
+                  <dd>{formatDateTime(currentRecord.completed_at)}</dd>
+                </div>
+                <div>
+                  <dt>Processing duration</dt>
+                  <dd>{formatDuration(currentRecord.processing_duration_seconds)}</dd>
+                </div>
+              </dl>
+            </section>
 
-          <section
-            className="history-detail-card history-detail-files"
-            aria-labelledby="history-files-title"
-          >
-            <h2 id="history-files-title">Uploaded files</h2>
-            <HistoryFiles record={currentRecord} />
-          </section>
+            <section
+              className="history-detail-card history-detail-files"
+              aria-labelledby="history-files-title"
+            >
+              <h2 id="history-files-title">Uploaded files</h2>
+              <HistoryFiles record={currentRecord} />
+            </section>
 
-          <section
-            className="history-detail-section"
-            aria-labelledby="history-summary-title"
-          >
-            <h2 id="history-summary-title">Transaction summary</h2>
-            <div className="history-detail-summary-grid">
-              <SourceSummary
-                title="Fund request"
-                summary={currentRecord.fund_request}
-              />
-              <SourceSummary
-                title="VA transaction"
-                summary={currentRecord.va_transaction}
-              />
-              <SourceSummary
-                title="Bank transaction"
-                summary={currentRecord.bank_transaction}
-              />
-            </div>
-          </section>
-        </>
-      )}
+            <section
+              className="history-detail-section"
+              aria-labelledby="history-summary-title"
+            >
+              <h2 id="history-summary-title">Transaction summary</h2>
+              <div className="history-detail-summary-grid">
+                <SourceSummary
+                  title="Fund request"
+                  summary={currentRecord.fund_request}
+                />
+                <SourceSummary
+                  title="VA transaction"
+                  summary={currentRecord.va_transaction}
+                />
+                <SourceSummary
+                  title="Bank transaction"
+                  summary={currentRecord.bank_transaction}
+                />
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+
+      <section
+        className="history-detail-transactions"
+        aria-label={`Transaction records for job ${jobId}`}
+      >
+        <TransactionTabs companies={companies} jobId={jobId ?? ""} />
+      </section>
     </section>
   );
 }

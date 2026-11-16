@@ -1612,6 +1612,11 @@ select:focus-visible {
   align-items: center;
 }
 
+.history-detail-header .page-kicker {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .history-detail-header > div {
   min-width: 0;
 }
@@ -1623,6 +1628,15 @@ select:focus-visible {
 .history-detail-header .history-status {
   margin-left: auto;
   flex: 0 0 auto;
+}
+
+.history-detail-job-id {
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .history-detail-card h2,
@@ -1665,6 +1679,15 @@ select:focus-visible {
 
 .history-detail-section {
   margin-bottom: 17px;
+}
+
+.history-detail-transactions {
+  min-width: 0;
+  margin-top: 22px;
+}
+
+.history-detail-transactions .transactions-card {
+  margin-bottom: 0;
 }
 
 .history-detail-summary-grid {
