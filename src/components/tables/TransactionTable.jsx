@@ -39,7 +39,10 @@ function StatusCell({ value }) {
  * fund request data, ACSMT statement data, validation checks, and settlement actions.
  */
 export default function TransactionTable({
+  id,
   transactions,
+  isLoading,
+  emptyMessage = "No transaction found",
   companies,
   settlementTargets,
   onSettlementChange,
@@ -47,7 +50,11 @@ export default function TransactionTable({
 }) {
   return (
     <div className="table-wrapper">
-      <table className="transaction-table transaction-data-table">
+      <table
+        id={id}
+        className="transaction-table transaction-data-table"
+        aria-busy={isLoading}
+      >
         <thead>
           {/* Top-level grouping labels divide the table into its major sections. */}
           <tr>
@@ -96,11 +103,24 @@ export default function TransactionTable({
         </thead>
 
         <tbody>
-          {transactions.length === 0 ? (
-            // Empty-state row shown when no items match the selected tab/filter.
-            <tr>
-              <td className="table-empty-state" colSpan={25}>
-                No transactions found for this tab.
+          {isLoading ? (
+            Array.from({ length: 5 }, (_, rowIndex) => (
+              <tr
+                className="transaction-skeleton-row"
+                key={`skeleton-${rowIndex}`}
+                aria-hidden="true"
+              >
+                {Array.from({ length: 25 }, (_, cellIndex) => (
+                  <td key={cellIndex}>
+                    <span className="transaction-skeleton-cell" />
+                  </td>
+                ))}
+              </tr>
+            ))
+          ) : transactions.length === 0 ? (
+            <tr className="transaction-empty-row">
+              <td className="table-empty-state" colSpan={25} role="status">
+                {emptyMessage}
               </td>
             </tr>
           ) : (

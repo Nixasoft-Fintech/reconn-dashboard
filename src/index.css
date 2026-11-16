@@ -1202,6 +1202,93 @@ a {
   display: none;
 }
 
+.transaction-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.transaction-search-control {
+  display: flex;
+  flex: 0 1 420px;
+  align-items: center;
+  min-width: min(100%, 260px);
+  height: 42px;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid #DFE5ED;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #64748B;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.transaction-search-control:focus-within {
+  border-color: #3475D5;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(52, 117, 213, 0.14);
+}
+
+.transaction-search-control input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #25344B;
+  font: inherit;
+  font-size: 13px;
+}
+
+.transaction-search-control input::placeholder {
+  color: #8490A2;
+  opacity: 1;
+}
+
+.transaction-search-clear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #64748B;
+}
+
+.transaction-search-clear:hover {
+  background: #F1F5F9;
+  color: #25344B;
+}
+
+.transaction-search-clear:focus-visible {
+  outline: 2px solid #3475D5;
+  outline-offset: 2px;
+}
+
+.transaction-search-hint {
+  margin: 0;
+  color: #64748B;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 /* ==============================
    TRANSACTION TABLE
 ============================== */
@@ -1308,8 +1395,14 @@ a {
 
 .table-empty-state {
   padding: 34px !important;
-  color: #8490A2 !important;
+  color: #B5473B !important;
   text-align: center;
+}
+
+.transaction-table tbody tr.transaction-empty-row td {
+  border-top: 1px solid #F3C6C1;
+  border-bottom: 1px solid #F3C6C1;
+  background: #FFF5F3;
 }
 
 .transaction-table-meta {
@@ -1325,6 +1418,60 @@ a {
 .transaction-table-meta span:first-child {
   color: #52647B;
   font-weight: 600;
+}
+
+.transaction-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.transaction-count::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.transaction-count-success {
+  color: #16865E !important;
+}
+
+.transaction-count-danger {
+  color: #B5473B !important;
+}
+
+.transaction-count-loading {
+  color: #8490A2 !important;
+}
+
+.transaction-skeleton-row td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.transaction-skeleton-cell {
+  display: block;
+  width: clamp(44px, 5vw, 88px);
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #EEF2F6 25%, #F8FAFC 50%, #EEF2F6 75%);
+  background-size: 200% 100%;
+  animation: transaction-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes transaction-skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transaction-skeleton-cell {
+    animation: none;
+    background-position: 0;
+  }
 }
 
 .transaction-pagination {
@@ -1616,6 +1763,18 @@ a {
 
   .transaction-tabs {
     gap: 7px;
+  }
+
+  .transaction-search-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .transaction-search-control {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
   }
 
   .transaction-table th,

@@ -20,7 +20,13 @@ export default function Header({ onReconcileClick }) {
         </button>
         <div className="header-date">
           <CalendarDays size={17} />
-          <span>14 November 2026</span>
+          <span>
+            {new Intl.DateTimeFormat("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }).format(new Date())}
+          </span>
         </div>
       </div>
     </header>

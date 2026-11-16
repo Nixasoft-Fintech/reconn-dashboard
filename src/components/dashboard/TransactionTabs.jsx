@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Search, X } from "lucide-react";
 import TransactionTable from "../tables/TransactionTable";
 import {
   getBankTransactions,
@@ -65,6 +65,14 @@ function mapTransaction(item, requestedStatus) {
   };
 }
 
+function matchesTransactionSearch(transaction, settlementTarget, query) {
+  return [...Object.values(transaction), settlementTarget].some(
+    (value) =>
+      (typeof value === "string" || typeof value === "number") &&
+      String(value).toLowerCase().includes(query),
+  );
+}
+
 export default function TransactionTabs({ companies, jobId }) {
   const [selectedSource, setSelectedSource] = useState("Fund Request");
   const [selectedStatus, setSelectedStatus] = useState("Matched");
@@ -86,6 +94,8 @@ export default function TransactionTabs({ companies, jobId }) {
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [transactionsError, setTransactionsError] = useState("");
   const [settlementPreview, setSettlementPreview] = useState(null);
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const currentPage =
     pageSelection.jobId === jobId &&
     pageSelection.source === selectedSource &&
@@ -96,6 +106,14 @@ export default function TransactionTabs({ companies, jobId }) {
     selectedSource === "Fund Request" ||
     selectedSource === "VA Transfer" ||
     selectedSource === "Account Statement";
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearch(searchText.trim().toLowerCase());
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchText]);
 
   useEffect(() => {
     if (!jobId || !isLiveSource) {
@@ -191,6 +209,43 @@ export default function TransactionTabs({ companies, jobId }) {
   ]);
 
   const transactions = isLiveSource && jobId ? transactionPage.items : [];
+  const filteredTransactions = debouncedSearch
+    ? transactions.filter((transaction) =>
+        matchesTransactionSearch(
+          transaction,
+          settlementTargets[transaction.txnId ?? transaction.id],
+          debouncedSearch,
+        ),
+      )
+    : transactions;
+  const isSearchPending =
+    Boolean(jobId && isLiveSource) &&
+    searchText.trim().toLowerCase() !== debouncedSearch;
+  const transactionCount = isLiveSource && jobId
+    ? transactionPage.total
+    : transactions.length;
+  const displayedCount = debouncedSearch
+    ? filteredTransactions.length
+    : transactionCount;
+  const transactionCountTone = isLoadingTransactions || isSearchPending
+    ? "loading"
+    : displayedCount > 0
+      ? "success"
+      : "danger";
+  const transactionCountLabel = isLoadingTransactions
+    ? "Loading transactions..."
+    : isSearchPending
+      ? "Updating search..."
+      : debouncedSearch
+        ? `${filteredTransactions.length} matching ${
+            filteredTransactions.length === 1 ? "transaction" : "transactions"
+          } on this page`
+    : transactionCount === 0
+      ? "0 transactions"
+      : `${(currentPage - 1) * pageSize + 1}–${Math.min(
+          currentPage * pageSize,
+          transactionCount,
+        )} of ${transactionCount} transactions`;
 
   const selectTab = (source, status) => {
     setSelectedSource(source);
@@ -257,7 +312,7 @@ export default function TransactionTabs({ companies, jobId }) {
       "Settle With",
     ];
 
-    const rows = transactions.map((item) => [
+    const rows = filteredTransactions.map((item) => [
       item.txnId ?? item.id ?? "",
       item.rowNumber ?? "",
       item.refNum ?? "",
@@ -363,29 +418,50 @@ export default function TransactionTabs({ companies, jobId }) {
         </button>
       </div>
 
+      <div className="transaction-search-row">
+        <div className="transaction-search-control">
+          <Search size={17} aria-hidden="true" />
+          <label className="visually-hidden" htmlFor="transaction-search">
+            Search transaction records on this page
+          </label>
+          <input
+            id="transaction-search"
+            type="text"
+            inputMode="search"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Search ID, reference, amount, user, bank..."
+            aria-describedby="transaction-search-hint"
+            aria-controls="transaction-records-table"
+            autoComplete="off"
+          />
+          {searchText && (
+            <button
+              className="transaction-search-clear"
+              type="button"
+              onClick={() => setSearchText("")}
+              aria-label="Clear transaction search"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        <p className="transaction-search-hint" id="transaction-search-hint">
+          Search the loaded page by ID, reference, amount, name, bank, or status.
+        </p>
+      </div>
+
       <div className="transaction-table-meta">
-        <span>
-          {isLiveSource && isLoadingTransactions
-            ? "Loading transactions..."
-            : isLiveSource
-            ? transactionPage.total === 0
-              ? "0 transactions"
-              : `${(currentPage - 1) * pageSize + 1}–${Math.min(
-                  currentPage * pageSize,
-                  transactionPage.total,
-                )} of ${transactionPage.total} transactions`
-            : `${transactions.length} ${
-                transactions.length === 1 ? "transaction" : "transactions"
-              }`}
+        <span
+          className={`transaction-count transaction-count-${transactionCountTone}`}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {transactionCountLabel}
         </span>
         <span>Scroll horizontally to view all fields</span>
       </div>
 
-      {isLiveSource && isLoadingTransactions && (
-        <p className="session-note" role="status">
-          Loading transactions...
-        </p>
-      )}
       {isLiveSource && !jobId && (
         <p className="session-note">
           Run a reconciliation to view transactions.
@@ -398,7 +474,14 @@ export default function TransactionTabs({ companies, jobId }) {
       )}
 
       <TransactionTable
-        transactions={transactions}
+        id="transaction-records-table"
+        transactions={filteredTransactions}
+        isLoading={isLoadingTransactions || isSearchPending}
+        emptyMessage={
+          debouncedSearch
+            ? `No transaction found for "${searchText.trim()}".`
+            : "No transaction found"
+        }
         companies={companies}
         settlementTargets={settlementTargets}
         onSettlementChange={handleSettlementChange}
@@ -498,18 +581,27 @@ export default function TransactionTabs({ companies, jobId }) {
                 </div>
               </dl>
               <p className="settlement-preview-note">
-                Settlement processing is not connected yet. No funds have been
-                transferred.
+                Confirming records your intent only. Settlement processing is
+                not connected yet, so no funds will be transferred.
               </p>
             </div>
             <footer className="upload-modal-footer">
-              <button
-                className="upload-modal-done"
-                type="button"
-                onClick={() => setSettlementPreview(null)}
-              >
-                Close
-              </button>
+              <div className="upload-modal-actions">
+                <button
+                  className="upload-modal-done"
+                  type="button"
+                  onClick={() => setSettlementPreview(null)}
+                >
+                  Close
+                </button>
+                <button
+                  className="upload-modal-submit"
+                  type="button"
+                  onClick={() => setSettlementPreview(null)}
+                >
+                  Confirm to settle
+                </button>
+              </div>
             </footer>
           </section>
         </div>
