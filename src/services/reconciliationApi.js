@@ -914,3 +914,10 @@ export async function exportTransactionsCsv(
     throw error;
   }
 }
+
+// ============================================================
+// COMPANY MANAGEMENT
+// ============================================================
+
+export { getCompanies, createCompany } from "./companyApi";
+

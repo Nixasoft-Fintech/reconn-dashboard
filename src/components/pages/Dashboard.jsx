@@ -730,6 +730,7 @@ export default function Dashboard() {
             <CompaniesPage
               companies={companies}
               onAddCompany={addCompany}
+              onNotify={notify}
             />
           }
         />
