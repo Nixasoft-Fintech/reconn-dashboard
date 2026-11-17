@@ -298,6 +298,7 @@ export default function ReconciliationUploadModal({
 
     setIsSubmitting(true);
     setIsAwaitingResult(false);
+    let wasSubmitted = false;
 
     try {
       const responseData = await submitReconciliation({
@@ -316,6 +317,7 @@ export default function ReconciliationUploadModal({
 
       setIsAwaitingResult(true);
       setResult(responseData);
+      wasSubmitted = true;
       onSubmitted({
         jobId: responseData.job_id,
         submittedAt: new Date().toISOString(),
@@ -338,6 +340,9 @@ export default function ReconciliationUploadModal({
       onNotify?.("error", `Could not submit reconciliation: ${message}`);
     } finally {
       setIsSubmitting(false);
+      if (wasSubmitted) {
+        onClose();
+      }
     }
   };
 

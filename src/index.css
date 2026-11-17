@@ -1130,7 +1130,7 @@ select:focus-visible {
 
 .history-table {
   width: 100%;
-  min-width: 1085px;
+  min-width: 1020px;
   table-layout: fixed;
   border-spacing: 0;
   color: var(--ink-soft);
@@ -1164,30 +1164,22 @@ select:focus-visible {
 }
 
 .history-table thead th:nth-child(1) {
-  width: 45px;
+  width: 50px;
 }
 
 .history-table thead th:nth-child(2) {
-  width: 175px;
+  width: 185px;
 }
 
 .history-table thead th:nth-child(3) {
-  width: 95px;
+  width: 205px;
 }
 
 .history-table thead th:nth-child(4) {
-  width: 135px;
+  width: 475px;
 }
 
 .history-table thead th:nth-child(5) {
-  width: 80px;
-}
-
-.history-table thead th:nth-child(6) {
-  width: 450px;
-}
-
-.history-table thead th:nth-child(7) {
   width: 105px;
 }
 
@@ -1213,7 +1205,13 @@ select:focus-visible {
 }
 
 .history-table td time {
-  white-space: nowrap;
+  display: block;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.history-table-created .history-status {
+  margin-top: 5px;
 }
 
 .history-table-empty-value {
@@ -1224,6 +1222,7 @@ select:focus-visible {
   display: flex;
   width: 100%;
   min-width: 0;
+  flex-wrap: nowrap;
   align-items: stretch;
   gap: 8px;
   margin: 0;

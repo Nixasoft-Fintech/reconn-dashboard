@@ -13,13 +13,6 @@ function formatNumber(value) {
     : number.toLocaleString("en-IN");
 }
 
-function formatDuration(value) {
-  const duration = Number(value);
-  return value == null || !Number.isFinite(duration)
-    ? "—"
-    : `${formatNumber(duration)} sec`;
-}
-
 function getStatusClass(status) {
   return String(status ?? "unknown")
     .toLowerCase()
@@ -81,17 +74,14 @@ function HistoryTableRow({ record, rowNumber }) {
       <th className="history-table-job-id" scope="row">
         {record.job_id}
       </th>
-      <td>
+      <td className="history-table-created">
+        <DateTimeValue value={record.created_at} />
         <span
           className={`history-status history-status-${getStatusClass(record.status)}`}
         >
           {record.status ?? "Unknown"}
         </span>
       </td>
-      <td>
-        <DateTimeValue value={record.created_at} />
-      </td>
-      <td>{formatDuration(record.processing_duration_seconds)}</td>
       <td>
         <FileTableCell files={files} jobId={record.job_id} />
       </td>
@@ -125,9 +115,7 @@ function HistoryTable({ items, loading = false, startIndex = 0 }) {
           <tr>
             <th scope="col">No.</th>
             <th scope="col">Job ID</th>
-            <th scope="col">Status</th>
             <th scope="col">Created</th>
-            <th scope="col">Duration</th>
             <th scope="col">Uploaded files</th>
             <th scope="col">Actions</th>
           </tr>
@@ -136,7 +124,7 @@ function HistoryTable({ items, loading = false, startIndex = 0 }) {
           {loading
             ? Array.from({ length: 6 }, (_, index) => (
                 <tr className="history-table-skeleton-row" key={index}>
-                {Array.from({ length: 7 }, (_, cellIndex) => (
+                  {Array.from({ length: 5 }, (_, cellIndex) => (
                     <td key={cellIndex}>
                       <span className="history-skeleton-line" />
                     </td>
