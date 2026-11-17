@@ -262,6 +262,7 @@ export default function ReconciliationUploadModal({
   isOpen,
   onClose,
   onSubmitted,
+  onNotify,
 }) {
   const [vaFiles, setVaFiles] = useState([]);
   const [fundFiles, setFundFiles] = useState([]);
@@ -289,7 +290,9 @@ export default function ReconciliationUploadModal({
     setResult(null);
 
     if (!canSubmit) {
-      setSubmitError("Select at least one file in each section.");
+      const message = "Select at least one file in each section.";
+      setSubmitError(message);
+      onNotify?.("error", message);
       return;
     }
 
@@ -327,11 +330,12 @@ export default function ReconciliationUploadModal({
         result: responseData,
       });
     } catch (error) {
-      setSubmitError(
+      const message =
         error instanceof Error
           ? error.message
-          : "Unable to submit reconciliation files.",
-      );
+          : "Unable to submit reconciliation files.";
+      setSubmitError(message);
+      onNotify?.("error", `Could not submit reconciliation: ${message}`);
     } finally {
       setIsSubmitting(false);
     }

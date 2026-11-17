@@ -1,10 +1,14 @@
+// Keep API URL construction centralized so every endpoint uses the same base URL.
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+// Map UI source names to API paths; exportTransactionsCsv uses this for every transaction tab.
 const transactionExportPaths = {
   "Fund Request": "fund-requests",
   "VA Transfer": "va-transactions",
   "Account Statement": "bank-transactions",
 };
 
+// Parse JSON responses, report API errors consistently, and reject malformed success responses.
 async function readResponse(response) {
   const data = await response.json().catch(() => null);
 
@@ -24,6 +28,7 @@ async function readResponse(response) {
   return data;
 }
 
+// CSV endpoints may return JSON, plain-text, or HTML errors; avoid exposing raw HTML to the UI.
 async function getExportErrorMessage(response) {
   const body = await response.text();
   const fallbackMessage = `Request failed (${response.status}).`;
@@ -46,6 +51,7 @@ async function getExportErrorMessage(response) {
   }
 }
 
+// Prefer the server-provided download name, but fall back to a safe local filename.
 function getExportFilename(response, fallbackFilename) {
   const contentDisposition = response.headers.get("content-disposition") ?? "";
   const encodedFilename = contentDisposition.match(
@@ -67,6 +73,11 @@ function getExportFilename(response, fallbackFilename) {
   return filename?.split(/[\\/]/).pop() || fallbackFilename;
 }
 
+/**
+ * Upload reconciliation files and report upload progress when a callback is provided.
+ * XMLHttpRequest is used because it exposes upload progress events; the resolved value
+ * is the parsed reconciliation response, and network/API failures reject the promise.
+ */
 export async function submitReconciliation({
   fundFiles,
   vaFiles,
@@ -131,6 +142,7 @@ export async function submitReconciliation({
   });
 }
 
+/** Fetch the latest processing summary for a reconciliation job. */
 export async function getReconciliationSummary(jobId, { signal } = {}) {
   const response = await fetch(
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/summary`,
@@ -140,6 +152,7 @@ export async function getReconciliationSummary(jobId, { signal } = {}) {
   return readResponse(response);
 }
 
+/** Fetch a page of reconciliation jobs; the history screen requests up to 100 by default. */
 export async function getReconciliationHistory({
   page = 1,
   limit = 100,
@@ -157,6 +170,7 @@ export async function getReconciliationHistory({
   return readResponse(response);
 }
 
+/** Fetch full details for one history job, identified by its job ID. */
 export async function getReconciliationHistoryDetails(jobId, { signal } = {}) {
   const response = await fetch(
     `${apiBaseUrl}/api/reconciliation/history/${encodeURIComponent(jobId)}`,
@@ -166,6 +180,10 @@ export async function getReconciliationHistoryDetails(jobId, { signal } = {}) {
   return readResponse(response);
 }
 
+/**
+ * Fetch a paginated fund-request transaction list.
+ * NOT_FOUND is the default so callers can omit status when they need unmatched records.
+ */
 export async function getFundRequests(
   jobId,
   { status = "NOT_FOUND", page = 1, limit = 100, signal } = {},
@@ -183,6 +201,7 @@ export async function getFundRequests(
   return readResponse(response);
 }
 
+/** Fetch a paginated VA transaction list; status, paging, and cancellation are configurable. */
 export async function getVaTransactions(
   jobId,
   { status = "NOT_FOUND", page = 1, limit = 100, signal } = {},
@@ -200,6 +219,7 @@ export async function getVaTransactions(
   return readResponse(response);
 }
 
+/** Fetch a paginated bank-statement transaction list; status, paging, and cancellation are configurable. */
 export async function getBankTransactions(
   jobId,
   { status = "NOT_FOUND", page = 1, limit = 100, signal } = {},
@@ -217,6 +237,10 @@ export async function getBankTransactions(
   return readResponse(response);
 }
 
+/**
+ * Download a CSV for the selected job, transaction source, and status.
+ * Returns a Blob and the server filename (or a generated fallback) for the UI to download.
+ */
 export async function exportTransactionsCsv(
   jobId,
   { source, status, signal } = {},

@@ -25,10 +25,10 @@ export function getDashboardMetrics(summary) {
     fundRequest.total_amount ??
     (fundRequest.total_records !== undefined
       ? sum(
-          fundRequest.matched_amount,
-          fundRequest.unmatched_amount,
-          fundRequest.excluded_amount,
-        )
+        fundRequest.matched_amount,
+        fundRequest.unmatched_amount,
+        fundRequest.excluded_amount,
+      )
       : fundRequest.eligible_source_amount ?? fundRequest.matched_amount);
   const vaTransactionTotalValue =
     vaTransaction.total_amount ??
@@ -84,7 +84,7 @@ export function getDashboardMetrics(summary) {
         matchedValue: toNumber(fundRequest.matched_amount),
         unmatchedCount: toNumber(
           fundRequest.unmatched_records ??
-            fundRequest.status_counts?.NOT_FOUND,
+          fundRequest.status_counts?.NOT_FOUND,
         ),
         unmatchedValue: toNumber(fundRequest.unmatched_amount),
       },
@@ -96,7 +96,7 @@ export function getDashboardMetrics(summary) {
         matchedValue: toNumber(vaTransaction.matched_amount),
         unmatchedCount: toNumber(
           vaTransaction.unmatched_records ??
-            vaTransaction.status_counts?.NOT_FOUND,
+          vaTransaction.status_counts?.NOT_FOUND,
         ),
         unmatchedValue: toNumber(vaTransaction.unmatched_amount),
       },

@@ -78,6 +78,10 @@ export default function TransactionTabs({
   companies,
   jobId,
   isWaitingForSummary = false,
+  summaryStatus = "",
+  canRetrySummary = false,
+  onRetrySummary,
+  onNotify,
 }) {
   const [selectedSource, setSelectedSource] = useState("Fund Request");
   const [selectedStatus, setSelectedStatus] = useState("Matched");
@@ -211,6 +215,12 @@ export default function TransactionTabs({
               ? error.message
               : "Unable to load reconciliation transactions.",
           );
+          onNotify?.(
+            "error",
+            error instanceof Error
+              ? `Could not load transactions: ${error.message}`
+              : "Unable to load reconciliation transactions.",
+          );
           setLoadedSelection(requestSelection);
         }
       } finally {
@@ -233,6 +243,7 @@ export default function TransactionTabs({
     pageSize,
     selectedSource,
     selectedStatus,
+    onNotify,
   ]);
 
   const transactions = isLiveSource && jobId ? transactionPage.items : [];
@@ -327,6 +338,7 @@ export default function TransactionTabs({
         source: selectedSource,
         status: selectedStatus === "Matched" ? "MATCHED" : "NOT_FOUND",
       });
+      onNotify?.("success", "Transaction CSV downloaded.");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
 
@@ -337,9 +349,10 @@ export default function TransactionTabs({
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setExportError(
-        error instanceof Error ? error.message : "Unable to export transactions.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Unable to export transactions.";
+      setExportError(message);
+      onNotify?.("error", `Could not export transactions: ${message}`);
     } finally {
       setIsExporting(false);
     }
@@ -364,6 +377,21 @@ export default function TransactionTabs({
           {isExporting ? "Exporting..." : "Export CSV"}
         </button>
       </div>
+
+      {summaryStatus === "PENDING" && (
+        <div className="summary-job-status" role="status" aria-live="polite">
+          <span>Reconciliation status: Pending</span>
+          {canRetrySummary && (
+            <button
+              className="retry-summary-btn"
+              type="button"
+              onClick={onRetrySummary}
+            >
+              Retry status check
+            </button>
+          )}
+        </div>
+      )}
 
       {exportError && (
         <p className="upload-submit-error" role="alert">
