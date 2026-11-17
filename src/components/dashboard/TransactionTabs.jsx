@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Download, Search, X } from "lucide-react";
 import TransactionTable from "../tables/TransactionTable";
 import {
+  createManualSettlement,
   exportTransactionsCsv,
   getBankTransactions,
   getFundRequests,
@@ -27,6 +28,11 @@ function mapTransaction(item, requestedStatus) {
   const finalStatus = String(item.final_status ?? requestedStatus).toUpperCase();
 
   return {
+    rawItem: item,
+    sourceType: item.source_type,
+    sourceTransactionId: item.source_transaction_id,
+    bankSourceFilename: item.bank_source_filename,
+    bankRowNumber: item.bank_row_number,
     txnId:
       item.source_transaction_id ??
       (item.bank_row_number != null
@@ -110,6 +116,13 @@ export default function TransactionTabs({
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [settlementPreview, setSettlementPreview] = useState(null);
+  const [counterpartOptions, setCounterpartOptions] = useState([]);
+  const [selectedCounterpartKey, setSelectedCounterpartKey] = useState("");
+  const [isLoadingCounterparts, setIsLoadingCounterparts] = useState(false);
+  const [settlementRemarks, setSettlementRemarks] = useState("");
+  const [isSettling, setIsSettling] = useState(false);
+  const [settleError, setSettleError] = useState("");
+  const [reloadTrigger, setReloadTrigger] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const currentPage =

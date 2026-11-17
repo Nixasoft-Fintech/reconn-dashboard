@@ -22,6 +22,7 @@ import HistoryPage from "./HistoryPage";
 import { getDashboardMetrics } from "../../utils/reconciliation";
 
 import {
+  getCompanies,
   getReconciliationSummary,
   openReconciliationStatusStream,
   retryReconciliation,
@@ -105,6 +106,21 @@ export default function Dashboard() {
 
   const [toast, setToast] = useState(null);
   const [companies, setCompanies] = useState([]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    getCompanies()
+      .then((res) => {
+        if (!isCurrent) return;
+        const items = Array.isArray(res?.items) ? res.items : [];
+        setCompanies(items);
+      })
+      .catch(() => {});
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   // Increment this value to restart monitoring after a retry.
   const [monitoringVersion, setMonitoringVersion] = useState(0);

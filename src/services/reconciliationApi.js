@@ -921,3 +921,77 @@ export async function exportTransactionsCsv(
 
 export { getCompanies, createCompany } from "./companyApi";
 
+// ============================================================
+// MANUAL SETTLEMENTS
+// ============================================================
+
+/**
+ * Create a manual settlement between a source record and a bank row.
+ * POST /api/reconciliation/{job_id}/manual-settlements
+ */
+export async function createManualSettlement(jobId, payload, { signal } = {}) {
+  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements`;
+
+  return requestJson(
+    "Create manual settlement",
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    },
+  );
+}
+
+/**
+ * List manual settlements for a job.
+ * GET /api/reconciliation/{job_id}/manual-settlements
+ */
+export async function getManualSettlements(
+  jobId,
+  { page = 1, limit = 100, signal } = {},
+) {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+
+  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
+
+  return requestJson(
+    "Get manual settlements",
+    url,
+    { signal },
+  );
+}
+
+/**
+ * Reverse an active manual settlement.
+ * POST /api/reconciliation/manual-settlements/{settlement_id}/reverse
+ */
+export async function reverseManualSettlement(
+  settlementId,
+  { reason, signal } = {},
+) {
+  const url = `${apiBaseUrl}/api/reconciliation/manual-settlements/${encodeURIComponent(settlementId)}/reverse`;
+
+  return requestJson(
+    "Reverse manual settlement",
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(reason ? { reason } : {}),
+      signal,
+    },
+  );
+}
+
+

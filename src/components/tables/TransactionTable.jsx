@@ -183,11 +183,14 @@ export default function TransactionTable({
                         aria-label={`Settle transaction ${transaction.txnId ?? transaction.id} with`}
                       >
                         <option value="">Select company</option>
-                        {companies.map((company) => (
-                          <option key={company.id} value={company.name}>
-                            {company.name}
-                          </option>
-                        ))}
+                        {companies.map((company) => {
+                          const companyId = company.company_id || company.id;
+                          return (
+                            <option key={companyId} value={companyId}>
+                              {company.name}
+                            </option>
+                          );
+                        })}
                       </select>
                       <button
                         className="settle-button"
