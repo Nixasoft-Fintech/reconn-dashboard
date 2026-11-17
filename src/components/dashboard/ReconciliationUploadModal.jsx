@@ -284,6 +284,16 @@ export default function ReconciliationUploadModal({
     );
   };
 
+  const handleClose = () => {
+    setVaFiles([]);
+    setFundFiles([]);
+    setStatementFiles([]);
+    setSubmitError("");
+    setResult(null);
+    setIsAwaitingResult(false);
+    onClose();
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSubmitError("");
@@ -341,7 +351,7 @@ export default function ReconciliationUploadModal({
     } finally {
       setIsSubmitting(false);
       if (wasSubmitted) {
-        onClose();
+        handleClose();
       }
     }
   };
@@ -371,7 +381,7 @@ export default function ReconciliationUploadModal({
             type="button"
             aria-label="Close reconciliation upload"
             disabled={isSubmitting}
-            onClick={onClose}
+            onClick={handleClose}
           >
             <X size={20} />
           </button>
@@ -426,7 +436,7 @@ export default function ReconciliationUploadModal({
               className="upload-modal-done"
               type="button"
               disabled={isSubmitting}
-              onClick={onClose}
+              onClick={handleClose}
             >
               Close
             </button>
