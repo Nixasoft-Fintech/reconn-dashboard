@@ -2578,6 +2578,107 @@ select:focus-visible {
   }
 }
 
+.records-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reconciliation-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.reconciliation-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reconciliation-status-success {
+  border-color: #cfe7d5;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.reconciliation-status-danger {
+  border-color: #ecd0cf;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.reconciliation-status-neutral {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+
+.reconciliation-status-message,
+.reconciliation-status-note {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.reconciliation-status-message {
+  color: var(--ink-soft);
+}
+
+.reconciliation-status-note {
+  color: var(--danger);
+}
+
+.reconciliation-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.reconciliation-connection-indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.reconciliation-connection-connected .reconciliation-connection-indicator {
+  background: var(--success);
+}
+
+.reconciliation-connection-connecting .reconciliation-connection-indicator,
+.reconciliation-connection-reconnecting .reconciliation-connection-indicator {
+  background: var(--warning);
+  animation: reconciliation-connection-pulse 1.2s ease-in-out infinite;
+}
+
+.reconciliation-connection-disconnected .reconciliation-connection-indicator,
+.reconciliation-connection-protocol-error .reconciliation-connection-indicator {
+  background: var(--danger);
+}
+
+@keyframes reconciliation-connection-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
 .summary-job-status {
   display: flex;
   align-items: center;
@@ -2604,8 +2705,13 @@ select:focus-visible {
   font-weight: 600;
 }
 
-.retry-summary-btn:hover {
+.retry-summary-btn:hover:not(:disabled) {
   background: #f7eac8;
+}
+
+.retry-summary-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .app-toast {

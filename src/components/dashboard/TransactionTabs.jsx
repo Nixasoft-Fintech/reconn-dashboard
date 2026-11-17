@@ -79,7 +79,11 @@ export default function TransactionTabs({
   jobId,
   isWaitingForSummary = false,
   summaryStatus = "",
+  jobStatusMessage = "",
+  statusConnectionState = "idle",
   canRetrySummary = false,
+  retryBlockedMessage = "",
+  isRetryingSummary = false,
   onRetrySummary,
   onNotify,
 }) {
@@ -358,6 +362,33 @@ export default function TransactionTabs({
     }
   };
 
+  const normalizedStatus = String(summaryStatus ?? "").trim().toUpperCase();
+  const isPending = normalizedStatus === "PENDING";
+  const isSaving = normalizedStatus === "SAVING";
+  const isCompleted = normalizedStatus === "COMPLETED";
+  const isFailed = normalizedStatus === "FAILED";
+  const currentStatusMessage =
+    jobStatusMessage ||
+    (isPending
+      ? "Waiting for reconciliation processing..."
+      : isSaving
+        ? "Saving reconciliation records..."
+        : isCompleted
+          ? "Reconciliation completed successfully."
+          : isFailed
+            ? "Reconciliation failed."
+            : "No reconciliation status available.");
+  const statusTone = isCompleted ? "success" : isFailed ? "danger" : "neutral";
+  const showRetryButton = isFailed && canRetrySummary;
+  const showRetryBlockedMessage = isFailed && !canRetrySummary && retryBlockedMessage;
+  const connectionMessage = {
+    connecting: "Connecting to live status...",
+    connected: "Live status connected",
+    reconnecting: "Connection lost. Reconnecting automatically...",
+    disconnected: "Live status disconnected. Waiting to reconnect...",
+    "protocol-error": "Received an invalid status update. Waiting for the next event...",
+  }[statusConnectionState];
+
   return (
     <section className="transactions-card">
       <div className="section-heading table-title">
@@ -366,32 +397,48 @@ export default function TransactionTabs({
           <p>View source-wise transaction details</p>
         </div>
 
-        <button
-          className="export-btn"
-          type="button"
-          onClick={exportCSV}
-          disabled={!jobId || isWaitingForSummary || isExporting}
-          aria-busy={isExporting}
-        >
-          <Download size={16} />
-          {isExporting ? "Exporting..." : "Export CSV"}
-        </button>
-      </div>
-
-      {summaryStatus === "PENDING" && (
-        <div className="summary-job-status" role="status" aria-live="polite">
-          <span>Reconciliation status: Pending</span>
-          {canRetrySummary && (
+        <div className="records-toolbar-actions">
+          <div className="reconciliation-status-bar" role="status" aria-live="polite">
+            <span className={`reconciliation-status-pill reconciliation-status-${statusTone}`}>
+              {normalizedStatus || "READY"}
+            </span>
+            <span className="reconciliation-status-message">
+              {currentStatusMessage}
+            </span>
+            {connectionMessage && !isCompleted && !isFailed && (
+              <span
+                className={`reconciliation-connection reconciliation-connection-${statusConnectionState}`}
+              >
+                <span className="reconciliation-connection-indicator" />
+                {connectionMessage}
+              </span>
+            )}
+            {showRetryBlockedMessage && (
+              <span className="reconciliation-status-note">{retryBlockedMessage}</span>
+            )}
+          </div>
+          {showRetryButton && (
             <button
               className="retry-summary-btn"
               type="button"
               onClick={onRetrySummary}
+              disabled={isRetryingSummary}
             >
-              Retry status check
+              {isRetryingSummary ? "Retrying..." : "Retry"}
             </button>
           )}
+          <button
+            className="export-btn"
+            type="button"
+            onClick={exportCSV}
+            disabled={!jobId || isWaitingForSummary || isExporting}
+            aria-busy={isExporting}
+          >
+            <Download size={16} />
+            {isExporting ? "Exporting..." : "Export CSV"}
+          </button>
         </div>
-      )}
+      </div>
 
       {exportError && (
         <p className="upload-submit-error" role="alert">
