@@ -1,53 +1,29 @@
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-const DEBUG_ENABLED = true;
-const DEBUG_PREFIX = "[RECON-DEBUG]";
-
-let requestCounter = 0;
-let streamCounter = 0;
-
 const transactionExportPaths = {
   "Fund Request": "fund-requests",
   "VA Transfer": "va-transactions",
   "Account Statement": "bank-transactions",
 };
 
+const MAX_RETRIES = 2;
+const BASE_RETRY_DELAY = 500;
+
+let requestCounter = 0;
+let streamCounter = 0;
+
 // ============================================================
-// DEBUG LOGGER
+// COMMON HELPERS
 // ============================================================
+
+function getRequestId() {
+  requestCounter += 1;
+  return `API-${requestCounter}`;
+}
 
 function getTimestamp() {
   return new Date().toISOString();
-}
-
-function debugLog(stage, message, data = null) {
-  if (!DEBUG_ENABLED) return;
-
-  const prefix = `${DEBUG_PREFIX} [${getTimestamp()}] [${stage}]`;
-
-  if (data !== null) {
-    console.log(prefix, message, data);
-  } else {
-    console.log(prefix, message);
-  }
-}
-
-function debugGroup(stage, title, callback) {
-  if (!DEBUG_ENABLED) {
-    callback?.();
-    return;
-  }
-
-  console.groupCollapsed(
-    `${DEBUG_PREFIX} [${getTimestamp()}] [${stage}] ${title}`,
-  );
-
-  try {
-    callback?.();
-  } finally {
-    console.groupEnd();
-  }
 }
 
 function getDuration(startTime) {
@@ -58,25 +34,69 @@ function getReadyStateName(readyState) {
   switch (readyState) {
     case EventSource.CONNECTING:
       return "CONNECTING";
-
     case EventSource.OPEN:
       return "OPEN";
-
     case EventSource.CLOSED:
       return "CLOSED";
-
     default:
       return `UNKNOWN (${readyState})`;
   }
 }
 
-function getRequestId() {
-  requestCounter += 1;
-  return `API-${requestCounter}`;
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Request aborted.", "AbortError"));
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, ms);
+
+    function handleAbort() {
+      clearTimeout(timeout);
+      reject(new DOMException("Request aborted.", "AbortError"));
+    }
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
+}
+
+function getRetryDelay(response, attempt) {
+  const retryAfter = response?.headers?.get("Retry-After");
+
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(seconds * 1000, 10000);
+    }
+
+    const retryDate = Date.parse(retryAfter);
+
+    if (!Number.isNaN(retryDate)) {
+      return Math.min(Math.max(retryDate - Date.now(), 0), 10000);
+    }
+  }
+
+  return BASE_RETRY_DELAY * (2 ** attempt);
+}
+
+function isRetryableStatus(status) {
+  return [408, 425, 429, 500, 502, 503, 504].includes(status);
+}
+
+function isNetworkError(error) {
+  return (
+    error instanceof TypeError ||
+    error?.name === "NetworkError"
+  );
 }
 
 // ============================================================
-// COMMON API RESPONSE HANDLING
+// API RESPONSE HANDLING
 // ============================================================
 
 async function readResponse(response) {
@@ -90,64 +110,67 @@ async function readResponse(response) {
       : detail;
 
     throw new Error(
-      message || `Request failed (${response.status}).`,
+      message || `Request failed (${response.status}).`
     );
   }
 
   if (!data || typeof data !== "object") {
     throw new Error(
-      "The reconciliation API returned an invalid response.",
+      "The reconciliation API returned an invalid response."
     );
   }
 
   return data;
 }
 
-/**
- * Centralized fetch wrapper.
- * Logs request, response, duration, and errors.
- */
+// ============================================================
+// CENTRALIZED REQUEST WITH RETRY
+// ============================================================
+
 async function requestJson(label, url, options = {}) {
-  const requestId = getRequestId();
-  const startTime = Date.now();
+  const method = (options.method || "GET").toUpperCase();
 
-  debugGroup("API REQUEST", `${requestId} ${label}`, () => {
-    debugLog("REQUEST", "URL:", url);
-    debugLog("REQUEST", "Method:", options.method || "GET");
-    debugLog("REQUEST", "Options:", options);
-  });
+  // Automatically retry only safe GET requests.
+  const canRetry = method === "GET";
 
-  try {
-    const response = await fetch(url, options);
+  for (let attempt = 0; ; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Request aborted.", "AbortError");
+    }
 
-    debugLog("API RESPONSE", `${requestId} HTTP response received`, {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      duration: getDuration(startTime),
-      url: response.url,
-    });
+    try {
+      const response = await fetch(url, options);
 
-    const data = await readResponse(response);
+      if (
+        canRetry &&
+        isRetryableStatus(response.status) &&
+        attempt < MAX_RETRIES
+      ) {
+        const delay = getRetryDelay(response, attempt);
 
-    debugGroup("API RESPONSE BODY", `${requestId} ${label}`, () => {
-      debugLog("RESPONSE DATA", "Complete response:", data);
-    });
+        await wait(delay, options.signal);
+        continue;
+      }
 
-    debugLog("API SUCCESS", `${requestId} ${label} completed`, {
-      duration: getDuration(startTime),
-    });
+      return await readResponse(response);
+    } catch (error) {
+      const aborted =
+        options.signal?.aborted ||
+        error?.name === "AbortError";
 
-    return data;
-  } catch (error) {
-    debugGroup("API ERROR", `${requestId} ${label} failed`, () => {
-      debugLog("ERROR MESSAGE", error.message);
-      debugLog("ERROR OBJECT", "Full error:", error);
-      debugLog("DURATION", getDuration(startTime));
-      debugLog("URL", url);
-    });
+      if (
+        !canRetry ||
+        aborted ||
+        !isNetworkError(error) ||
+        attempt >= MAX_RETRIES
+      ) {
+        throw error;
+      }
 
-    throw error;
+      const delay = BASE_RETRY_DELAY * (2 ** attempt);
+
+      await wait(delay, options.signal);
+    }
   }
 }
 
@@ -157,6 +180,7 @@ async function requestJson(label, url, options = {}) {
 
 async function getExportErrorMessage(response) {
   const body = await response.text();
+
   const fallbackMessage = `Request failed (${response.status}).`;
 
   if (!body) return fallbackMessage;
@@ -184,11 +208,11 @@ function getExportFilename(response, fallbackFilename) {
     response.headers.get("content-disposition") ?? "";
 
   const encodedFilename = contentDisposition.match(
-    /filename\*=UTF-8''([^;]+)/i,
+    /filename\*=UTF-8''([^;]+)/i
   )?.[1];
 
   const plainFilename = contentDisposition.match(
-    /filename="?([^";]+)"?/i,
+    /filename="?([^";]+)"?/i
   )?.[1];
 
   let filename = plainFilename;
@@ -209,138 +233,52 @@ function getExportFilename(response, fallbackFilename) {
 // ============================================================
 
 export async function submitReconciliation({
-  fundFiles,
-  vaFiles,
-  statementFiles,
+  fundFiles = [],
+  vaFiles = [],
+  statementFiles = [],
   onUploadProgress,
 }) {
-  const requestId = getRequestId();
-  const startTime = Date.now();
-
-  debugGroup(
-    "RECONCILIATION START",
-    `${requestId} File upload started`,
-    () => {
-      debugLog("UPLOAD", "Fund request files:", fundFiles.length);
-      debugLog("UPLOAD", "VA transaction files:", vaFiles.length);
-      debugLog("UPLOAD", "Bank statement files:", statementFiles.length);
-
-      debugLog(
-        "UPLOAD",
-        "Fund files:",
-        fundFiles.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        })),
-      );
-
-      debugLog(
-        "UPLOAD",
-        "VA files:",
-        vaFiles.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        })),
-      );
-
-      debugLog(
-        "UPLOAD",
-        "Statement files:",
-        statementFiles.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        })),
-      );
-
-      debugLog(
-        "UPLOAD",
-        "Endpoint:",
-        `${apiBaseUrl}/api/reconcile`,
-      );
-    },
-  );
-
   const formData = new FormData();
 
-  fundFiles.forEach((file) =>
-    formData.append("fund_request_file", file),
-  );
+  fundFiles.forEach((file) => {
+    formData.append("fund_request_file", file);
+  });
 
-  vaFiles.forEach((file) =>
-    formData.append("va_transaction_file", file),
-  );
+  vaFiles.forEach((file) => {
+    formData.append("va_transaction_file", file);
+  });
 
-  statementFiles.forEach((file) =>
-    formData.append("bank_statement_file", file),
-  );
+  statementFiles.forEach((file) => {
+    formData.append("bank_statement_file", file);
+  });
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
 
     request.open("POST", `${apiBaseUrl}/api/reconcile`);
 
-    let lastLoggedProgress = -1;
-
-    request.upload.addEventListener("loadstart", () => {
-      debugLog("UPLOAD", `${requestId} Upload started`);
-    });
-
     request.upload.addEventListener("progress", (event) => {
       if (!event.lengthComputable) return;
 
       const progress = Math.min(
         100,
-        Math.round((event.loaded / event.total) * 100),
+        Math.round((event.loaded / event.total) * 100)
       );
-
-      // Log only when progress increases by at least 10%.
-      if (
-        progress === 100 ||
-        progress >= lastLoggedProgress + 10
-      ) {
-        lastLoggedProgress = progress;
-
-        debugLog("UPLOAD PROGRESS", `${requestId} ${progress}%`, {
-          uploadedBytes: event.loaded,
-          totalBytes: event.total,
-          percentage: progress,
-        });
-      }
 
       onUploadProgress?.(progress);
     });
 
-    request.upload.addEventListener("load", () => {
-      debugLog("UPLOAD", `${requestId} File transfer completed`, {
-        duration: getDuration(startTime),
-      });
-    });
-
     request.addEventListener("load", () => {
-      debugLog("UPLOAD RESPONSE", `${requestId} Server responded`, {
-        status: request.status,
-        statusText: request.statusText,
-        duration: getDuration(startTime),
-      });
-
       let data;
 
       try {
         data = JSON.parse(request.responseText);
-      } catch (error) {
-        debugLog("UPLOAD PARSE ERROR", "Invalid JSON response", {
-          responseText: request.responseText,
-          error,
-        });
-
+      } catch {
         if (request.status >= 200 && request.status < 300) {
           reject(
             new Error(
-              "The reconciliation API returned an invalid response.",
-            ),
+              "The reconciliation API returned an invalid response."
+            )
           );
           return;
         }
@@ -353,15 +291,10 @@ export async function submitReconciliation({
           ? detail.map((item) => item.msg).join(", ")
           : detail;
 
-        debugLog("UPLOAD FAILED", `${requestId} Upload API failed`, {
-          status: request.status,
-          response: data,
-        });
-
         reject(
           new Error(
-            message || `Request failed (${request.status}).`,
-          ),
+            message || `Request failed (${request.status}).`
+          )
         );
 
         return;
@@ -370,57 +303,32 @@ export async function submitReconciliation({
       if (!data || typeof data !== "object") {
         reject(
           new Error(
-            "The reconciliation API returned an invalid response.",
-          ),
+            "The reconciliation API returned an invalid response."
+          )
         );
         return;
       }
-
-      debugGroup(
-        "RECONCILIATION SUBMITTED",
-        `${requestId} Backend response`,
-        () => {
-          debugLog("JOB ID", "Received job ID:", data.job_id ?? data.jobId);
-          debugLog("STATUS", "Initial status:", data.status);
-          debugLog("COMPLETE RESPONSE", "Response body:", data);
-        },
-      );
-
-      debugLog("UPLOAD SUCCESS", `${requestId} Completed`, {
-        duration: getDuration(startTime),
-      });
 
       resolve(data);
     });
 
     request.addEventListener("error", () => {
-      debugLog("UPLOAD NETWORK ERROR", `${requestId} Network error`, {
-        status: request.status,
-        duration: getDuration(startTime),
-      });
-
       reject(
         new Error(
-          "Network error while uploading reconciliation files.",
-        ),
+          "Network error while uploading reconciliation files."
+        )
       );
     });
 
     request.addEventListener("abort", () => {
-      debugLog("UPLOAD ABORTED", `${requestId} Upload aborted`);
-
       reject(
-        new Error("The reconciliation file upload was aborted."),
+        new Error("The reconciliation file upload was aborted.")
       );
     });
 
     request.addEventListener("timeout", () => {
-      debugLog("UPLOAD TIMEOUT", `${requestId} Upload timed out`);
-
       reject(new Error("Reconciliation upload timed out."));
     });
-
-    debugLog("UPLOAD", `${requestId} Sending FormData to backend`);
 
     request.send(formData);
   });
@@ -432,16 +340,12 @@ export async function submitReconciliation({
 
 export async function getReconciliationSummary(
   jobId,
-  { signal } = {},
+  { signal } = {}
 ) {
-  debugLog("SUMMARY", "Fetching reconciliation summary", {
-    jobId,
-  });
-
   return requestJson(
     "Get reconciliation summary",
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/summary`,
-    { signal },
+    { signal }
   );
 }
 
@@ -456,66 +360,22 @@ export function openReconciliationStatusStream(
     onError,
     onOpen,
     onProtocolError,
-  } = {},
+  } = {}
 ) {
   if (!jobId) {
     throw new Error(
-      "A job ID is required to open the status stream.",
+      "A job ID is required to open the status stream."
     );
   }
 
   const streamId = `SSE-${++streamCounter}`;
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/events`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/events`;
 
-  const connectionStartTime = Date.now();
-
-  debugGroup(
-    "SSE CONNECTING",
-    `${streamId} Starting status stream`,
-    () => {
-      debugLog("JOB ID", jobId);
-      debugLog("STREAM URL", url);
-      debugLog("TIME", "Connection requested at:", getTimestamp());
-    },
-  );
-
-  let source;
-
-  try {
-    source = new EventSource(url);
-  } catch (error) {
-    debugLog("SSE CREATION ERROR", `${streamId} Could not create EventSource`, {
-      error,
-      message: error.message,
-    });
-
-    throw error;
-  }
-
-  debugLog("SSE CREATED", `${streamId} EventSource object created`, {
-    readyState: getReadyStateName(source.readyState),
-  });
-
-  // ----------------------------------------------------------
-  // SSE EVENT HANDLER
-  // ----------------------------------------------------------
+  const source = new EventSource(url);
 
   const handleEvent = (event) => {
-    const eventReceivedAt = Date.now();
-
-    debugGroup(
-      "SSE EVENT RECEIVED",
-      `${streamId} Event: ${event.type}`,
-      () => {
-        debugLog("EVENT TYPE", event.type);
-        debugLog("JOB ID", jobId);
-        debugLog("LAST EVENT ID", event.lastEventId || "Not provided");
-        debugLog("EVENT DATA RAW", event.data);
-        debugLog("EVENT TIME", getTimestamp());
-      },
-    );
-
     let payload;
 
     try {
@@ -527,148 +387,33 @@ export function openReconciliationStatusStream(
         Array.isArray(payload)
       ) {
         throw new Error(
-          "Status event must contain a JSON object.",
+          "Status event must contain a JSON object."
         );
       }
     } catch (error) {
-      debugGroup(
-        "SSE PARSE ERROR",
-        `${streamId} Invalid event JSON`,
-        () => {
-          debugLog("RAW DATA", event.data);
-          debugLog("ERROR", error);
-        },
-      );
-
       onProtocolError?.(error);
       return;
     }
 
-    const receivedStatus = String(
-      payload?.status ?? "",
-    ).trim().toUpperCase();
-
-    debugGroup(
-      "SSE STATUS UPDATE",
-      `${streamId} Status: ${receivedStatus || "UNKNOWN"}`,
-      () => {
-        debugLog("JOB ID", payload?.job_id ?? jobId);
-        debugLog("STATUS", receivedStatus);
-        debugLog("MESSAGE", payload?.message ?? "");
-        debugLog("FULL PAYLOAD", payload);
-        debugLog(
-          "PROCESSING TIME",
-          `${Date.now() - eventReceivedAt}ms`,
-        );
-      },
-    );
-
     try {
       onMessage?.(payload);
-    } catch (error) {
-      debugLog("SSE CALLBACK ERROR", `${streamId} onMessage failed`, {
-        error,
-        payload,
-      });
+    } catch {
+      // Keep the SSE connection alive if a UI callback fails.
     }
   };
 
-  // Named events: event: status
   source.addEventListener("status", handleEvent);
-
-  // Unnamed/default events.
   source.onmessage = handleEvent;
 
-  // ----------------------------------------------------------
-  // CONNECTION OPEN
-  // ----------------------------------------------------------
-
   source.onopen = (event) => {
-    debugGroup(
-      "SSE CONNECTED",
-      `${streamId} Connection established`,
-      () => {
-        debugLog("JOB ID", jobId);
-        debugLog("READY STATE", getReadyStateName(source.readyState));
-        debugLog("OPEN TIME", getTimestamp());
-        debugLog(
-          "CONNECTION DURATION",
-          getDuration(connectionStartTime),
-        );
-        debugLog("EVENT", event);
-      },
-    );
-
     onOpen?.(event);
   };
 
-  // ----------------------------------------------------------
-  // CONNECTION ERROR / RECONNECTION
-  // ----------------------------------------------------------
-
   source.onerror = (event) => {
-    const readyState = source.readyState;
-
-    debugGroup(
-      "SSE CONNECTION ERROR",
-      `${streamId} EventSource error`,
-      () => {
-        debugLog("JOB ID", jobId);
-        debugLog("READY STATE", getReadyStateName(readyState));
-        debugLog("ERROR TIME", getTimestamp());
-        debugLog("EVENT", event);
-
-        if (readyState === EventSource.CONNECTING) {
-          debugLog(
-            "SSE RECONNECTING",
-            "Browser EventSource is attempting automatic reconnection.",
-          );
-        } else if (readyState === EventSource.CLOSED) {
-          debugLog(
-            "SSE CLOSED",
-            "EventSource connection is permanently closed.",
-          );
-        }
-      },
-    );
-
+    // EventSource automatically reconnects.
     // Do not create another EventSource here.
-    // Browser EventSource handles automatic reconnection.
-    onError?.(event, readyState);
+    onError?.(event, source.readyState);
   };
-
-  // ----------------------------------------------------------
-  // LOG WHEN CONNECTION IS CLOSED
-  // ----------------------------------------------------------
-
-  const originalClose = source.close.bind(source);
-
-  source.close = () => {
-    debugGroup(
-      "SSE CLOSE",
-      `${streamId} Closing status stream`,
-      () => {
-        debugLog("JOB ID", jobId);
-        debugLog("CLOSE TIME", getTimestamp());
-        debugLog(
-          "PREVIOUS READY STATE",
-          getReadyStateName(source.readyState),
-        );
-        debugLog(
-          "CONNECTION LIFETIME",
-          getDuration(connectionStartTime),
-        );
-      },
-    );
-
-    originalClose();
-
-    debugLog("SSE CLOSED", `${streamId} Connection closed`, {
-      readyState: getReadyStateName(source.readyState),
-    });
-  };
-
-  debugLog("SSE WAITING", `${streamId} Waiting for server events`);
 
   return source;
 }
@@ -679,11 +424,11 @@ export function openReconciliationStatusStream(
 
 export async function retryReconciliation(
   jobId,
-  { signal } = {},
+  { signal } = {}
 ) {
-  debugLog("RETRY", "Retry reconciliation requested", {
-    jobId,
-  });
+  if (!jobId) {
+    throw new Error("A job ID is required to retry reconciliation.");
+  }
 
   return requestJson(
     "Retry reconciliation",
@@ -691,7 +436,7 @@ export async function retryReconciliation(
     {
       method: "POST",
       signal,
-    },
+    }
   );
 }
 
@@ -709,25 +454,27 @@ export async function getReconciliationHistory({
     limit: String(limit),
   });
 
-  const url = `${apiBaseUrl}/api/reconciliation/history?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/history?${params}`;
 
   return requestJson(
     "Get reconciliation history",
     url,
-    { signal },
+    { signal }
   );
 }
 
 export async function getReconciliationHistoryDetails(
   jobId,
-  { signal } = {},
+  { signal } = {}
 ) {
-  const url = `${apiBaseUrl}/api/reconciliation/history/${encodeURIComponent(jobId)}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/history/${encodeURIComponent(jobId)}`;
 
   return requestJson(
     "Get reconciliation history details",
     url,
-    { signal },
+    { signal }
   );
 }
 
@@ -742,7 +489,7 @@ export async function getFundRequests(
     page = 1,
     limit = 100,
     signal,
-  } = {},
+  } = {}
 ) {
   const params = new URLSearchParams({
     status,
@@ -750,12 +497,13 @@ export async function getFundRequests(
     limit: String(limit),
   });
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/fund-requests?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/fund-requests?${params}`;
 
   return requestJson(
     "Get fund request transactions",
     url,
-    { signal },
+    { signal }
   );
 }
 
@@ -770,7 +518,7 @@ export async function getVaTransactions(
     page = 1,
     limit = 100,
     signal,
-  } = {},
+  } = {}
 ) {
   const params = new URLSearchParams({
     status,
@@ -778,12 +526,13 @@ export async function getVaTransactions(
     limit: String(limit),
   });
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/va-transactions?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/va-transactions?${params}`;
 
   return requestJson(
     "Get VA transactions",
     url,
-    { signal },
+    { signal }
   );
 }
 
@@ -798,7 +547,7 @@ export async function getBankTransactions(
     page = 1,
     limit = 100,
     signal,
-  } = {},
+  } = {}
 ) {
   const params = new URLSearchParams({
     status,
@@ -806,12 +555,13 @@ export async function getBankTransactions(
     limit: String(limit),
   });
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/bank-transactions?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/bank-transactions?${params}`;
 
   return requestJson(
     "Get bank statement transactions",
     url,
-    { signal },
+    { signal }
   );
 }
 
@@ -821,11 +571,8 @@ export async function getBankTransactions(
 
 export async function exportTransactionsCsv(
   jobId,
-  { source, status, signal } = {},
+  { source, status, signal } = {}
 ) {
-  const requestId = getRequestId();
-  const startTime = Date.now();
-
   const exportPath = transactionExportPaths[source];
 
   if (!exportPath) {
@@ -834,85 +581,81 @@ export async function exportTransactionsCsv(
 
   if (!jobId) {
     throw new Error(
-      "Run a reconciliation before exporting transactions.",
+      "Run a reconciliation before exporting transactions."
     );
   }
 
   if (!status) {
     throw new Error(
-      "Choose a transaction status before exporting.",
+      "Choose a transaction status before exporting."
     );
   }
 
   const params = new URLSearchParams({ status });
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/${exportPath}/export?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/${exportPath}/export?${params}`;
 
-  debugGroup(
-    "CSV EXPORT START",
-    `${requestId} Exporting ${source}`,
-    () => {
-      debugLog("JOB ID", jobId);
-      debugLog("SOURCE", source);
-      debugLog("STATUS", status);
-      debugLog("URL", url);
-    },
-  );
+  let response;
 
-  try {
-    const response = await fetch(url, {
-      signal,
-      headers: { Accept: "text/csv" },
-    });
-
-    debugLog("CSV RESPONSE", `${requestId} Server responded`, {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      duration: getDuration(startTime),
-    });
-
-    if (!response.ok) {
-      const errorMessage = await getExportErrorMessage(response);
-
-      debugLog("CSV EXPORT ERROR", `${requestId} Export failed`, {
-        errorMessage,
-      });
-
-      throw new Error(errorMessage);
+  for (let attempt = 0; ; attempt += 1) {
+    if (signal?.aborted) {
+      throw new DOMException("Request aborted.", "AbortError");
     }
 
-    const fallbackFilename = `${exportPath}-${status
-      .toLowerCase()
-      .replaceAll("_", "-")}.csv`;
+    try {
+      response = await fetch(url, {
+        signal,
+        headers: { Accept: "text/csv" },
+      });
 
-    const filename = getExportFilename(
-      response,
-      fallbackFilename,
-    );
+      if (
+        isRetryableStatus(response.status) &&
+        attempt < MAX_RETRIES
+      ) {
+        await wait(getRetryDelay(response, attempt), signal);
+        continue;
+      }
 
-    const blob = await response.blob();
+      break;
+    } catch (error) {
+      const aborted =
+        signal?.aborted ||
+        error?.name === "AbortError";
 
-    debugLog("CSV EXPORT SUCCESS", `${requestId} CSV downloaded`, {
-      filename,
-      fileSize: blob.size,
-      fileType: blob.type,
-      duration: getDuration(startTime),
-    });
+      if (
+        aborted ||
+        !isNetworkError(error) ||
+        attempt >= MAX_RETRIES
+      ) {
+        throw error;
+      }
 
-    return {
-      blob,
-      filename,
-    };
-  } catch (error) {
-    debugLog("CSV EXPORT FAILED", `${requestId} Error`, {
-      message: error.message,
-      error,
-      duration: getDuration(startTime),
-    });
-
-    throw error;
+      await wait(
+        BASE_RETRY_DELAY * (2 ** attempt),
+        signal
+      );
+    }
   }
+
+  if (!response.ok) {
+    throw new Error(await getExportErrorMessage(response));
+  }
+
+  const fallbackFilename =
+    `${exportPath}-${status.toLowerCase().replaceAll("_", "-")}.csv`;
+
+  const filename = getExportFilename(
+    response,
+    fallbackFilename
+  );
+
+  const blob = await response.blob();
+
+  return {
+    blob,
+    filename,
+  };
 }
 
 // ============================================================
@@ -929,8 +672,18 @@ export { getCompanies, createCompany } from "./companyApi";
  * Create a manual settlement between a source record and a bank row.
  * POST /api/reconciliation/{job_id}/manual-settlements
  */
-export async function createManualSettlement(jobId, payload, { signal } = {}) {
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements`;
+
+export async function createManualSettlement(
+  jobId,
+  payload,
+  { signal } = {}
+) {
+  if (!jobId) {
+    throw new Error("A job ID is required.");
+  }
+
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements`;
 
   return requestJson(
     "Create manual settlement",
@@ -943,7 +696,7 @@ export async function createManualSettlement(jobId, payload, { signal } = {}) {
       },
       body: JSON.stringify(payload),
       signal,
-    },
+    }
   );
 }
 
@@ -951,21 +704,27 @@ export async function createManualSettlement(jobId, payload, { signal } = {}) {
  * List manual settlements for a job.
  * GET /api/reconciliation/{job_id}/manual-settlements
  */
+
 export async function getManualSettlements(
   jobId,
-  { page = 1, limit = 100, signal } = {},
+  {
+    page = 1,
+    limit = 100,
+    signal,
+  } = {}
 ) {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
 
-  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
+  const url =
+    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
 
   return requestJson(
     "Get manual settlements",
     url,
-    { signal },
+    { signal }
   );
 }
 
@@ -973,11 +732,20 @@ export async function getManualSettlements(
  * Reverse an active manual settlement.
  * POST /api/reconciliation/manual-settlements/{settlement_id}/reverse
  */
+
 export async function reverseManualSettlement(
   settlementId,
-  { reason, signal } = {},
+  {
+    reason,
+    signal,
+  } = {}
 ) {
-  const url = `${apiBaseUrl}/api/reconciliation/manual-settlements/${encodeURIComponent(settlementId)}/reverse`;
+  if (!settlementId) {
+    throw new Error("A settlement ID is required.");
+  }
+
+  const url =
+    `${apiBaseUrl}/api/reconciliation/manual-settlements/${encodeURIComponent(settlementId)}/reverse`;
 
   return requestJson(
     "Reverse manual settlement",
@@ -990,8 +758,6 @@ export async function reverseManualSettlement(
       },
       body: JSON.stringify(reason ? { reason } : {}),
       signal,
-    },
+    }
   );
 }
-
-

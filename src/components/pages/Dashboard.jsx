@@ -1,672 +1,651 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-
 import DashboardLayout from "../layout/DashboardLayout";
 import Header from "../layout/Header";
-
 import SummaryCard from "../dashboard/SummaryCard";
 import ReconciliationCard from "../dashboard/ReconciliationCard";
 import TransactionTabs from "../dashboard/TransactionTabs";
-
 import {
   ReconciliationSkeleton,
   SummarySkeleton,
 } from "../dashboard/DataSkeletons";
-
 import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
 import CompaniesPage from "./CompaniesPage";
 import HistoryDetailsPage from "./HistoryDetailsPage";
 import HistoryPage from "./HistoryPage";
-
 import { getDashboardMetrics } from "../../utils/reconciliation";
-
 import {
-  getCompanies,
   getReconciliationSummary,
   openReconciliationStatusStream,
   retryReconciliation,
 } from "../../services/reconciliationApi";
 
+// -----------------------------------------------------------------------------
+// Configuration and status helpers
+// -----------------------------------------------------------------------------
 const ACTIVE_JOB_ID_KEY = "bank-reconciliation-active-job-id";
+const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED"]);
+const MAX_RECONNECT_ATTEMPTS = 8;
+const BASE_RECONNECT_DELAY = 3000;
+const MAX_RECONNECT_DELAY = 30000;
 
 const normalizeStatus = (value) =>
   String(value ?? "").trim().toUpperCase();
 
+const getFailureCode = (payload = {}) =>
+  String(
+    payload?.failure_code ??
+      payload?.failureCode ??
+      payload?.failure_code_value ??
+      "",
+  ).trim();
+
+const isServerRestartFailure = (payload = {}) => {
+  const failureCode = getFailureCode(payload).toUpperCase();
+  const searchableText = `${failureCode} ${
+    payload?.message ??
+    payload?.failure_message ??
+    payload?.failureMessage ??
+    ""
+  }`.toLowerCase();
+  return /(server.*restart|restart.*server|memory.*state|in-memory.*state|state.*lost|processing.*state.*lost|lost.*processing|resume.*not.*possible)/.test(
+    searchableText,
+  );
+};
+const isRetryableFailure = (payload = {}) => {
+  if (normalizeStatus(payload?.status) !== "FAILED") return false;
+  if (isServerRestartFailure(payload)) return false;
+  return payload?.retryable === true || payload?.can_retry === true;
+};
+const getFailureGuidance = (payload = {}) => {
+  if (isServerRestartFailure(payload)) {
+    return "The processing state was lost after a server restart. Please upload the files again and start a new reconciliation.";
+  }
+
+  return "The backend has not marked this job as retryable. Please check the failure details; you may need to upload the files again and start a new reconciliation.";
+};
 const getDefaultStatusMessage = (status, fallbackMessage = "") => {
   switch (normalizeStatus(status)) {
     case "PENDING":
       return "Waiting for reconciliation processing...";
-
     case "SAVING":
       return "Saving reconciliation records...";
-
     case "COMPLETED":
       return "Reconciliation completed successfully.";
-
     case "FAILED":
       return fallbackMessage || "Reconciliation failed.";
-
     default:
       return fallbackMessage || "Waiting for reconciliation processing...";
   }
 };
 
-const getFailureCode = (payload = {}) =>
-  String(payload?.failure_code ?? payload?.failureCode ?? "").trim();
+const getResponseMessage = (payload = {}) =>
+  String(
+    payload?.message ??
+      payload?.failure_message ??
+      payload?.failureMessage ??
+      "",
+  ).trim();
 
-const isServerRestartFailure = (payload = {}) => {
-  const failureCode = getFailureCode(payload).toUpperCase();
-
-  const searchableText = `${failureCode} ${
-    payload?.message ?? payload?.failure_message ?? ""
-  }`.toLowerCase();
-
-  return /(server.*restart|restart.*server|memory.*state|in-memory.*state|state.*lost|processing.*state.*lost|lost.*processing|resume.*not.*possible)/.test(
-    searchableText,
-  );
-};
-
-const isRetryableFailure = (payload = {}) => {
-  if (normalizeStatus(payload?.status) !== "FAILED") {
-    return false;
-  }
-
-  return (
-    !isServerRestartFailure(payload) &&
-    (payload?.retryable === true || payload?.can_retry === true)
-  );
-};
+// -----------------------------------------------------------------------------
+// Dashboard component
+// -----------------------------------------------------------------------------
 
 export default function Dashboard() {
+  // UI state: modal, summary data, job status, connection state, and notifications.
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-
   const [activeJobId, setActiveJobId] = useState(
     () => window.localStorage.getItem(ACTIVE_JOB_ID_KEY) ?? "",
   );
-
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [loadedSummaryJobId, setLoadedSummaryJobId] = useState("");
   const [completedSummaryJobId, setCompletedSummaryJobId] = useState("");
-
   const [summaryError, setSummaryError] = useState("");
   const [summaryStatus, setSummaryStatus] = useState("");
   const [jobStatusMessage, setJobStatusMessage] = useState("");
-
-  const [statusConnectionState, setStatusConnectionState] = useState(
-    () =>
-      window.localStorage.getItem(ACTIVE_JOB_ID_KEY)
-        ? "connecting"
-        : "idle",
+  const [statusConnectionState, setStatusConnectionState] = useState(() =>
+    window.localStorage.getItem(ACTIVE_JOB_ID_KEY)
+      ? "connecting"
+      : "idle",
   );
-
   const [canRetrySummary, setCanRetrySummary] = useState(false);
   const [retryBlockedMessage, setRetryBlockedMessage] = useState("");
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
-
   const [toast, setToast] = useState(null);
   const [companies, setCompanies] = useState([]);
-
-  useEffect(() => {
-    let isCurrent = true;
-    getCompanies()
-      .then((res) => {
-        if (!isCurrent) return;
-        const items = Array.isArray(res?.items) ? res.items : [];
-        setCompanies(items);
-      })
-      .catch(() => {});
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
-
-  // Increment this value to restart monitoring after a retry.
-  const [monitoringVersion, setMonitoringVersion] = useState(0);
-
+  // Refs keep values available to async callbacks without re-creating handlers.
   const toastId = useRef(0);
   const notifiedCompletedJobId = useRef("");
   const eventSourceRef = useRef(null);
-
+  const activeJobIdRef = useRef(activeJobId);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const connectStatusStreamRef = useRef(null);
+  const initialSummaryRequestRef = useRef({
+    jobId: "",
+    promise: null,
+  });
+  const finalSummaryRequestRef = useRef({
+    jobId: "",
+    promise: null,
+  });
+  const retryInProgressRef = useRef(false);
+  // Derived UI flags. Transactions are shown only after the job is completed.
   const isDashboardLoading =
     Boolean(activeJobId) && loadedSummaryJobId !== activeJobId;
-
   const isSummaryCompleted =
     Boolean(activeJobId) && completedSummaryJobId === activeJobId;
-
   const canLoadTransactions =
     isSummaryCompleted && !isDashboardLoading;
 
+  // ---------------------------------------------------------------------------
+  // Notifications
+  // ---------------------------------------------------------------------------
   const notify = useCallback((type, message) => {
     toastId.current += 1;
-    setToast({ id: toastId.current, type, message });
+    setToast({
+      id: toastId.current,
+      type,
+      message,
+    });
   }, []);
-
   useEffect(() => {
     if (!toast) return undefined;
-
-    const timeoutId = window.setTimeout(() => {
-      setToast(null);
-    }, 5000);
-
+    const timeoutId = window.setTimeout(
+      () => setToast(null),
+      5000,
+    );
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
+  // ---------------------------------------------------------------------------
+  // SSE connection lifecycle
+  // ---------------------------------------------------------------------------
+  // Stop scheduled reconnects and close the active EventSource.
+
+  // Called when a job changes, reaches a terminal status, or the component unmounts.
   const disconnectStatusStream = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+      eventSourceRef.current.source.close();
       eventSourceRef.current = null;
     }
+    reconnectAttemptsRef.current = 0;
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // New reconciliation job setup
+  // ---------------------------------------------------------------------------
   const addCompany = useCallback((company) => {
     setCompanies((currentCompanies) => [
       ...currentCompanies,
       company,
     ]);
   }, []);
-
   const addHistoryRecord = useCallback(
     (record) => {
-      const jobId = record?.jobId;
-
+      const jobId = record?.jobId ?? record?.job_id;
       if (!jobId) {
-        notify("error", "The upload response did not contain a job ID.");
+        notify(
+          "error",
+          "The reconciliation response did not include a job ID.",
+        );
         return;
       }
-
-      window.localStorage.setItem(ACTIVE_JOB_ID_KEY, jobId);
-
-      const initialSummary = record.result?.summary ?? null;
-      const initialStatus = normalizeStatus(record.result?.status);
-
-      const initialMessage = String(
-        record.result?.message ??
-          record.result?.failure_message ??
-          record.result?.failureMessage ??
-          "",
-      ).trim();
-
       disconnectStatusStream();
-
+      window.localStorage.setItem(ACTIVE_JOB_ID_KEY, jobId);
+      activeJobIdRef.current = jobId;
       setActiveJobId(jobId);
+      const initialSummary =
+        record?.result?.summary ?? record?.summary ?? null;
+      const initialStatus = normalizeStatus(
+        record?.result?.status ?? record?.status,
+      );
+      const initialMessage = getResponseMessage(
+        record?.result ?? record,
+      );
       setDashboardSummary(initialSummary);
       setLoadedSummaryJobId(initialSummary ? jobId : "");
-      setCompletedSummaryJobId(
-        initialStatus === "COMPLETED" ? jobId : "",
-      );
-
       setSummaryStatus(initialStatus);
       setJobStatusMessage(
         initialMessage ||
           getDefaultStatusMessage(initialStatus),
       );
-
-      setSummaryError("");
-      setCanRetrySummary(false);
-      setRetryBlockedMessage("");
-
       setStatusConnectionState(
-        initialStatus === "COMPLETED" || initialStatus === "FAILED"
+        TERMINAL_STATUSES.has(initialStatus)
           ? "closed"
           : "connecting",
       );
+      setCanRetrySummary(false);
+      setRetryBlockedMessage("");
+      setCompletedSummaryJobId(
+        initialStatus === "COMPLETED" ? jobId : "",
+      );
+      setSummaryError("");
+      notifiedCompletedJobId.current = "";
+      initialSummaryRequestRef.current = {
+        jobId: "",
+        promise: null,
+      };
+      finalSummaryRequestRef.current = {
+        jobId: "",
+        promise: null,
+      };
+      notify(
+        initialStatus === "COMPLETED" ? "success" : "info",
+        initialMessage ||
+          (initialStatus === "COMPLETED"
+            ? "Reconciliation completed successfully."
+            : "Reconciliation submitted. Waiting for processing."),
+      );
+    },
+    [disconnectStatusStream, notify],
+  );
 
-      setMonitoringVersion((value) => value + 1);
+  // ---------------------------------------------------------------------------
+  // Summary API: fetch the initial or final summary for a job.
 
-      if (initialStatus === "COMPLETED") {
-        notifiedCompletedJobId.current = jobId;
-        notify(
-          "success",
-          initialMessage || "Reconciliation completed successfully.",
-        );
-      } else {
-        notify(
-          "info",
-          initialMessage || "Reconciliation submitted. Waiting for updates.",
-        );
+  // Requests are de-duplicated per job and request type.
+
+  // ---------------------------------------------------------------------------
+  const loadSummary = useCallback(
+    async (jobId, { requestType = "normal" } = {}) => {
+      if (!jobId) return null;
+      const requestRef =
+        requestType === "final"
+          ? finalSummaryRequestRef
+          : initialSummaryRequestRef;
+      if (
+        requestRef.current.jobId === jobId &&
+        requestRef.current.promise
+      ) {
+        return requestRef.current.promise;
+      }
+      const requestPromise = getReconciliationSummary(jobId);
+      requestRef.current = {
+        jobId,
+        promise: requestPromise,
+      };
+      try {
+        const response = await requestPromise;
+        if (activeJobIdRef.current !== jobId) {
+          return response;
+        }
+        const status = normalizeStatus(response?.status);
+        const message =
+          getResponseMessage(response) ||
+          getDefaultStatusMessage(status);
+        const summary = response?.summary ?? response ?? null;
+        setDashboardSummary(summary);
+        setLoadedSummaryJobId(jobId);
+        setSummaryError("");
+        setSummaryStatus(status);
+        setJobStatusMessage(message);
+        if (status === "COMPLETED") {
+          disconnectStatusStream();
+          setCompletedSummaryJobId(jobId);
+          setCanRetrySummary(false);
+          setRetryBlockedMessage("");
+          setStatusConnectionState("closed");
+          if (notifiedCompletedJobId.current !== jobId) {
+            notifiedCompletedJobId.current = jobId;
+            notify("success", message);
+          }
+        } else if (status === "FAILED") {
+          disconnectStatusStream();
+          setCompletedSummaryJobId("");
+          const retryable = isRetryableFailure(response);
+          setCanRetrySummary(retryable);
+          setRetryBlockedMessage(
+            retryable ? "" : getFailureGuidance(response),
+          );
+          setStatusConnectionState("closed");
+          notify("error", message || "Reconciliation failed.");
+        } else {
+          setCompletedSummaryJobId("");
+          setCanRetrySummary(false);
+          setRetryBlockedMessage("");
+        }
+        return response;
+      } catch (error) {
+        if (activeJobIdRef.current === jobId) {
+          setSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load the reconciliation summary.",
+          );
+          setStatusConnectionState("disconnected");
+        }
+        throw error;
+      } finally {
+        if (requestRef.current.jobId === jobId) {
+          requestRef.current = {
+            jobId: "",
+            promise: null,
+          };
+        }
       }
     },
     [disconnectStatusStream, notify],
   );
 
-  const refreshSummary = useCallback(
-    async (jobId = activeJobId) => {
-      if (!jobId) return null;
-
-      const response = await getReconciliationSummary(jobId);
-
-      // Ignore a response belonging to an older job.
-      if (window.localStorage.getItem(ACTIVE_JOB_ID_KEY) !== jobId) {
-        return null;
-      }
-
-      const status = normalizeStatus(response?.status);
-
-      const message = String(
-        response?.message ??
-          response?.failure_message ??
-          response?.failureMessage ??
-          "",
-      ).trim();
-
-      setDashboardSummary(response?.summary ?? response ?? null);
-      setLoadedSummaryJobId(jobId);
-      setSummaryError("");
+  // ---------------------------------------------------------------------------
+  // SSE event handler: update status and react to COMPLETED / FAILED.
+  // ---------------------------------------------------------------------------
+  const handleStatusEvent = useCallback(
+    async (jobId, payload) => {
+      if (activeJobIdRef.current !== jobId) return;
+      const status = normalizeStatus(payload?.status);
+      if (!status) return;
+      const message =
+        getResponseMessage(payload) ||
+        getDefaultStatusMessage(status);
       setSummaryStatus(status);
-      setJobStatusMessage(
-        message || getDefaultStatusMessage(status),
-      );
-
+      setJobStatusMessage(message);
       if (status === "COMPLETED") {
-        setCompletedSummaryJobId(jobId);
+        disconnectStatusStream();
         setCanRetrySummary(false);
         setRetryBlockedMessage("");
-
-        if (notifiedCompletedJobId.current !== jobId) {
-          notifiedCompletedJobId.current = jobId;
+        setStatusConnectionState("closed");
+        setCompletedSummaryJobId("");
+        try {
+          await loadSummary(jobId, {
+            requestType: "final",
+          });
+        } catch (error) {
           notify(
-            "success",
-            message || "Reconciliation completed successfully.",
+            "error",
+            error instanceof Error
+              ? `Reconciliation completed, but the final summary could not be loaded: ${error.message}`
+              : "Reconciliation completed, but the final summary could not be loaded.",
           );
         }
-      } else if (status === "FAILED") {
-        setCanRetrySummary(isRetryableFailure(response));
-
-        setRetryBlockedMessage(
-          isRetryableFailure(response)
-            ? ""
-            : "This job cannot be resumed. Please upload the files again and start a new reconciliation.",
-        );
+        return;
       }
-
-      return response;
+      if (status === "FAILED") {
+        disconnectStatusStream();
+        const retryable = isRetryableFailure(payload);
+        setCanRetrySummary(retryable);
+        setRetryBlockedMessage(
+          retryable ? "" : getFailureGuidance(payload),
+        );
+        setStatusConnectionState("closed");
+        setCompletedSummaryJobId("");
+        notify("error", message || "Reconciliation failed.");
+        return;
+      }
+      setCanRetrySummary(false);
+      setRetryBlockedMessage("");
     },
-    [activeJobId, notify],
+    [disconnectStatusStream, loadSummary, notify],
+  );
+  // Schedule a new EventSource only after the browser has permanently closed
+  // the previous stream. CONNECTING is handled by native EventSource retry.
+  const scheduleReconnect = useCallback((jobId) => {
+    if (!jobId || activeJobIdRef.current !== jobId) return;
+    if (reconnectTimerRef.current !== null) return;
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      setStatusConnectionState("disconnected");
+      console.error(
+        "SSE reconnect limit reached. Check the backend endpoint and response status.",
+      );
+      return;
+    }
+    const attempt = reconnectAttemptsRef.current + 1;
+    reconnectAttemptsRef.current = attempt;
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY * 2 ** (attempt - 1),
+      MAX_RECONNECT_DELAY,
+    );
+    console.warn(
+      `SSE reconnect attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`,
+    );
+    setStatusConnectionState("reconnecting");
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      if (activeJobIdRef.current !== jobId) return;
+      connectStatusStreamRef.current?.(jobId);
+    }, delay);
+  }, []);
+  // Create one EventSource for the active job. Native EventSource handles
+  // transient reconnects; the manual scheduler is only a CLOSED-state fallback.
+  const connectStatusStream = useCallback(
+    (jobId) => {
+      if (!jobId || activeJobIdRef.current !== jobId) {
+        return;
+      }
+      const existing = eventSourceRef.current;
+      if (
+        existing?.jobId === jobId &&
+        existing.source.readyState !== EventSource.CLOSED
+      ) {
+        return;
+      }
+      // Remove a previous CLOSED source before creating a new one.
+      if (eventSourceRef.current) {
+        eventSourceRef.current.source.close();
+        eventSourceRef.current = null;
+      }
+      setStatusConnectionState("connecting");
+      let source;
+      try {
+        source = openReconciliationStatusStream(jobId, {
+          onOpen: () => {
+            if (activeJobIdRef.current !== jobId) return;
+            // Reset attempts after a successful connection.
+            reconnectAttemptsRef.current = 0;
+            setStatusConnectionState("connected");
+          },
+          onMessage: (payload) => {
+            void handleStatusEvent(jobId, payload);
+          },
+          onError: (event, readyState) => {
+            if (activeJobIdRef.current !== jobId) return;
+            console.warn(
+              "Reconciliation SSE connection error",
+              {
+                jobId,
+                readyState,
+                event,
+              },
+            );
+            if (readyState === EventSource.CONNECTING) {
+              // Native EventSource will retry automatically.
+              setStatusConnectionState("reconnecting");
+              return;
+            }
+            if (readyState === EventSource.CLOSED) {
+              // Native retry has stopped. Create a new EventSource.
+              if (eventSourceRef.current?.source === source) {
+                eventSourceRef.current = null;
+              }
+              setStatusConnectionState("disconnected");
+              scheduleReconnect(jobId);
+            }
+          },
+          onProtocolError: (error) => {
+            if (activeJobIdRef.current === jobId) {
+              setStatusConnectionState("protocol-error");
+            }
+            console.error("Invalid SSE event:", error);
+          },
+        });
+        eventSourceRef.current = {
+          jobId,
+          source,
+        };
+      } catch (error) {
+        console.error("Could not create SSE connection:", error);
+        setStatusConnectionState("disconnected");
+        scheduleReconnect(jobId);
+      }
+    },
+    [handleStatusEvent, scheduleReconnect],
   );
 
-  /*
-   * Main monitoring effect:
-   * 1. Fetch initial summary once.
-   * 2. If job is still processing, open one SSE connection.
-   * 3. Listen for named status events.
-   * 4. Let EventSource handle network reconnection automatically.
-   */
+  // ---------------------------------------------------------------------------
+  // Keep refs synchronized with the latest active job and connection function.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    connectStatusStreamRef.current = connectStatusStream;
+    return () => {
+      connectStatusStreamRef.current = null;
+    };
+  }, [connectStatusStream]);
+  // Keep the active-job ref synchronized for async callbacks.
+  useEffect(() => {
+    activeJobIdRef.current = activeJobId;
+  }, [activeJobId]);
+
+  // ---------------------------------------------------------------------------
+  // Monitoring flow:
+
+  // 1. Fetch summary.
+  // 2. If the job is non-terminal, connect to SSE.
+  // 3. If summary fetch fails, still try SSE to receive status updates.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!activeJobId) {
       disconnectStatusStream();
-      setStatusConnectionState("idle");
       return undefined;
     }
-
-    let isActive = true;
-    let source = null;
-
-    const closeStream = () => {
-      if (source) {
-        source.close();
-        source = null;
-      }
-
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-
-    const handleStatusEvent = async (payload) => {
-      if (!isActive) return;
-
-      const status = normalizeStatus(payload?.status);
-
-      const message = String(
-        payload?.message ??
-          payload?.failure_message ??
-          payload?.failureMessage ??
-          "",
-      ).trim();
-
-      // This is a status lookup problem, not a reconciliation failure.
-      // Keep the last known real job status.
-      if (status === "STATUS_CHECK_ERROR") {
-        setStatusConnectionState("reconnecting");
-        setJobStatusMessage(
-          message ||
-            "Unable to check status temporarily. Waiting for the next update...",
-        );
-        return;
-      }
-
-      if (!status) return;
-
-      setSummaryStatus(status);
-      setJobStatusMessage(
-        message || getDefaultStatusMessage(status),
-      );
-
-      if (status === "COMPLETED") {
-        setCanRetrySummary(false);
-        setRetryBlockedMessage("");
-        setStatusConnectionState("closed");
-
-        closeStream();
-
-        try {
-          const response = await getReconciliationSummary(activeJobId);
-
-          if (!isActive) return;
-
-          setDashboardSummary(
-            response?.summary ?? response ?? null,
-          );
-
-          setLoadedSummaryJobId(activeJobId);
-          setCompletedSummaryJobId(activeJobId);
-          setSummaryError("");
-
-          const finalMessage = String(
-            response?.message ?? message ?? "",
-          ).trim();
-
-          setJobStatusMessage(
-            finalMessage ||
-              "Reconciliation completed successfully.",
-          );
-
-          if (notifiedCompletedJobId.current !== activeJobId) {
-            notifiedCompletedJobId.current = activeJobId;
-            notify(
-              "success",
-              finalMessage || "Reconciliation completed successfully.",
-            );
-          }
-        } catch (error) {
-          if (!isActive) return;
-
-          setSummaryError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load the final reconciliation summary.",
-          );
-        }
-
-        return;
-      }
-
-      if (status === "FAILED") {
-        const retryable = isRetryableFailure(payload);
-
-        setCanRetrySummary(retryable);
-        setRetryBlockedMessage(
-          retryable
-            ? ""
-            : "This job cannot be resumed. Please upload the files again and start a new reconciliation.",
-        );
-
-        setStatusConnectionState("closed");
-        closeStream();
-
-        notify(
-          "error",
-          message || "Reconciliation failed.",
-        );
-
-        return;
-      }
-
-      if (status === "PENDING" || status === "SAVING") {
-        setCanRetrySummary(false);
-        setRetryBlockedMessage("");
-        setStatusConnectionState("connected");
-      }
-    };
-
+    let cancelled = false;
     const startMonitoring = async () => {
-      setStatusConnectionState("connecting");
-
       try {
-        const response = await getReconciliationSummary(activeJobId);
-
-        if (!isActive) return;
-
-        const initialStatus = normalizeStatus(response?.status);
-
-        setDashboardSummary(
-          response?.summary ?? response ?? null,
-        );
-
-        setLoadedSummaryJobId(activeJobId);
-        setSummaryError("");
-        setSummaryStatus(initialStatus);
-
-        const initialMessage = String(
-          response?.message ??
-            response?.failure_message ??
-            response?.failureMessage ??
-            "",
-        ).trim();
-
-        setJobStatusMessage(
-          initialMessage ||
-            getDefaultStatusMessage(initialStatus),
-        );
-
-        if (initialStatus === "COMPLETED") {
-          setCompletedSummaryJobId(activeJobId);
-          setCanRetrySummary(false);
-          setRetryBlockedMessage("");
-          setStatusConnectionState("closed");
-
-          if (notifiedCompletedJobId.current !== activeJobId) {
-            notifiedCompletedJobId.current = activeJobId;
-            notify(
-              "success",
-              initialMessage || "Reconciliation completed successfully.",
-            );
-          }
-
+        const response = await loadSummary(activeJobId);
+        if (
+          cancelled ||
+          activeJobIdRef.current !== activeJobId
+        ) {
           return;
         }
-
-        if (initialStatus === "FAILED") {
-          const retryable = isRetryableFailure(response);
-
-          setCanRetrySummary(retryable);
-          setRetryBlockedMessage(
-            retryable
-              ? ""
-              : "This job cannot be resumed. Please upload the files again and start a new reconciliation.",
-          );
-
-          setStatusConnectionState("closed");
-          return;
+        const status = normalizeStatus(response?.status);
+        if (!TERMINAL_STATUSES.has(status)) {
+          connectStatusStream(activeJobId);
         }
-
-        setCompletedSummaryJobId("");
-        setCanRetrySummary(false);
-        setRetryBlockedMessage("");
-
-        // Open exactly one EventSource connection for this job.
-        source = openReconciliationStatusStream(activeJobId, {
-          onOpen: () => {
-            if (isActive) {
-              setStatusConnectionState("connected");
-            }
-          },
-
-          onMessage: (payload) => {
-            void handleStatusEvent(payload);
-          },
-
-          onError: (_event, readyState) => {
-            if (!isActive) return;
-
-            // Do not create another EventSource here.
-            // Native EventSource automatically retries.
-            setStatusConnectionState(
-              readyState === EventSource.CLOSED
-                ? "disconnected"
-                : "reconnecting",
-            );
-          },
-
-          onProtocolError: (error) => {
-            if (!isActive) return;
-
-            console.error("Invalid SSE event:", error);
-            setStatusConnectionState("protocol-error");
-          },
-        });
-
-        eventSourceRef.current = source;
       } catch (error) {
-        if (!isActive) return;
-
-        setSummaryError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load the reconciliation summary.",
-        );
-
-        setStatusConnectionState("disconnected");
-
+        if (cancelled) return;
+        console.error("Initial summary request failed:", error);
         notify(
           "error",
           error instanceof Error
-            ? `Could not load reconciliation status: ${error.message}`
-            : "Unable to load the reconciliation summary.",
+            ? `Could not load summary: ${error.message}`
+            : "Could not load reconciliation summary.",
         );
+        // Summary API failed, but try connecting to SSE anyway.
+        if (
+          activeJobIdRef.current === activeJobId
+        ) {
+          connectStatusStream(activeJobId);
+        }
       }
     };
-
     void startMonitoring();
-
     return () => {
-      isActive = false;
-      closeStream();
+      cancelled = true;
+      if (eventSourceRef.current?.jobId === activeJobId) {
+        disconnectStatusStream();
+      }
     };
   }, [
     activeJobId,
-    monitoringVersion,
+    connectStatusStream,
     disconnectStatusStream,
+    loadSummary,
     notify,
   ]);
 
+  // ---------------------------------------------------------------------------
+  // Retry flow: only backend-confirmed retryable FAILED jobs can be retried.
+  // ---------------------------------------------------------------------------
   const retrySummary = useCallback(async () => {
+    const jobId = activeJobIdRef.current;
     if (
-      !activeJobId ||
       !canRetrySummary ||
+      !jobId ||
       isSummaryCompleted ||
-      isRetryingSummary
+      retryInProgressRef.current
     ) {
       return;
     }
-
+    retryInProgressRef.current = true;
     setIsRetryingSummary(true);
     setCanRetrySummary(false);
     setRetryBlockedMessage("");
-
     notify("info", "Retrying reconciliation...");
-
     try {
-      const response = await retryReconciliation(activeJobId);
-
-      const nextStatus = normalizeStatus(response?.status);
-
-      const message = String(
-        response?.message ??
-          response?.failure_message ??
-          response?.failureMessage ??
-          "",
-      ).trim();
-
-      setSummaryStatus(nextStatus || "PENDING");
-      setJobStatusMessage(
-        message ||
-          getDefaultStatusMessage(nextStatus || "PENDING"),
-      );
-
-      if (nextStatus === "FAILED") {
+      disconnectStatusStream();
+      const response = await retryReconciliation(jobId);
+      if (activeJobIdRef.current !== jobId) return;
+      const status = normalizeStatus(response?.status);
+      const message =
+        getResponseMessage(response) ||
+        getDefaultStatusMessage(status);
+      setSummaryStatus(status || "PENDING");
+      setJobStatusMessage(message);
+      if (status === "COMPLETED") {
+        disconnectStatusStream();
+        await loadSummary(jobId, {
+          requestType: "final",
+        });
+        return;
+      }
+      if (status === "FAILED") {
         const retryable = isRetryableFailure(response);
-
         setCanRetrySummary(retryable);
         setRetryBlockedMessage(
-          retryable
-            ? ""
-            : "This job cannot be resumed. Please upload the files again and start a new reconciliation.",
+          retryable ? "" : getFailureGuidance(response),
         );
-
         setStatusConnectionState("closed");
-
         notify(
           "error",
           message || "The reconciliation retry failed.",
         );
-
         return;
       }
-
-      if (nextStatus === "COMPLETED") {
-        const refreshed = await getReconciliationSummary(activeJobId);
-
-        setDashboardSummary(
-          refreshed?.summary ?? refreshed ?? null,
-        );
-
-        setLoadedSummaryJobId(activeJobId);
-        setCompletedSummaryJobId(activeJobId);
-        setSummaryStatus("COMPLETED");
-        setCanRetrySummary(false);
-        setRetryBlockedMessage("");
-        setStatusConnectionState("closed");
-
-        notify(
-          "success",
-          message || "Reconciliation completed successfully.",
-        );
-
-        return;
-      }
-
-      // Restart the monitoring effect after successful retry.
-      disconnectStatusStream();
+      setCanRetrySummary(false);
+      setRetryBlockedMessage("");
       setStatusConnectionState("connecting");
-      setMonitoringVersion((value) => value + 1);
-
+      connectStatusStream(jobId);
       notify(
         "info",
-        message || "Retry initiated. Waiting for live status updates.",
+        message || "Reconciliation retry initiated.",
       );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "Unable to retry reconciliation.";
-
-      setCanRetrySummary(true);
       setSummaryError(message);
-
-      notify("error", `Could not retry reconciliation: ${message}`);
+      notify(
+        "error",
+        `Could not retry reconciliation: ${message}`,
+      );
     } finally {
+      retryInProgressRef.current = false;
       setIsRetryingSummary(false);
     }
   }, [
-    activeJobId,
     canRetrySummary,
-    isSummaryCompleted,
-    isRetryingSummary,
-    notify,
+    connectStatusStream,
     disconnectStatusStream,
+    isSummaryCompleted,
+    loadSummary,
+    notify,
   ]);
 
+  // ---------------------------------------------------------------------------
+  // Dashboard rendering
+  // ---------------------------------------------------------------------------
   const metrics = dashboardSummary
     ? getDashboardMetrics(dashboardSummary)
     : {
         summaryData: [],
         reconciliationData: [],
       };
-
   return (
     <DashboardLayout>
       <Routes>
@@ -677,14 +656,12 @@ export default function Dashboard() {
               <Header
                 onReconcileClick={() => setIsUploadModalOpen(true)}
               />
-
               {summaryError && (
                 <p className="upload-submit-error" role="alert">
                   Could not load summary for job {activeJobId}:{" "}
                   {summaryError}
                 </p>
               )}
-
               <section
                 className="summary-grid"
                 aria-busy={isDashboardLoading}
@@ -693,11 +670,13 @@ export default function Dashboard() {
                   <SummarySkeleton />
                 ) : (
                   metrics.summaryData.map((item) => (
-                    <SummaryCard key={item.title} item={item} />
+                    <SummaryCard
+                      key={item.title}
+                      item={item}
+                    />
                   ))
                 )}
               </section>
-
               <section
                 className="reconciliation-grid"
                 aria-busy={isDashboardLoading}
@@ -713,7 +692,6 @@ export default function Dashboard() {
                   ))
                 )}
               </section>
-
               <TransactionTabs
                 companies={companies}
                 jobId={canLoadTransactions ? activeJobId : ""}
@@ -729,7 +707,6 @@ export default function Dashboard() {
                 onRetrySummary={retrySummary}
                 onNotify={notify}
               />
-
               <ReconciliationUploadModal
                 isOpen={isUploadModalOpen}
                 onClose={() => setIsUploadModalOpen(false)}
@@ -739,28 +716,27 @@ export default function Dashboard() {
             </>
           }
         />
-
         <Route
           path="/companies"
           element={
             <CompaniesPage
               companies={companies}
               onAddCompany={addCompany}
-              onNotify={notify}
             />
           }
         />
-
         <Route
           path="/history/:jobId"
-          element={<HistoryDetailsPage companies={companies} />}
+          element={
+            <HistoryDetailsPage companies={companies} />
+          }
         />
-
         <Route path="/history" element={<HistoryPage />} />
-
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
+        />
       </Routes>
-
       {toast && (
         <div
           className={`app-toast app-toast-${toast.type}`}
@@ -770,7 +746,6 @@ export default function Dashboard() {
           }
         >
           <span>{toast.message}</span>
-
           <button
             type="button"
             aria-label="Dismiss notification"
