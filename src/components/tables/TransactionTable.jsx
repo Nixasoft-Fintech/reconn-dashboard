@@ -125,8 +125,9 @@ export default function TransactionTable({
             </tr>
           ) : (
             // Each transaction row contains both the source record and the matching ACSMT data.
-            transactions.map((transaction) => (
-              <tr key={transaction.txnId ?? transaction.id}>
+            transactions.map((transaction,index) => (
+              <tr key={transaction.source_transaction_id || index}>
+              {/* {console.log("Rendering transaction:", transaction.source_transaction_id)} */}
                 <td className="transaction-id">{transaction.txnId ?? transaction.id ?? "—"}</td>
                 <td>{transaction.rowNumber ?? "—"}</td>
                 <td>{transaction.refNum ?? "—"}</td>

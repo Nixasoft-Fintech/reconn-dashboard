@@ -273,6 +273,14 @@ export default function TransactionTabs({
           signal: controller.signal,
         });
 
+        console.log("TRANSACTION DATA UPDATED:", {
+  source: selectedSource,
+  status,
+  page: currentPage,
+  totalRecords: response.total,
+  records: response.items,
+});
+
         if (!Array.isArray(response.items)) {
           throw new Error(
             "The transactions API returned an invalid item list.",
