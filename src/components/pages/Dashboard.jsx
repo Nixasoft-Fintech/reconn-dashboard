@@ -15,6 +15,7 @@ import HistoryDetailsPage from "./HistoryDetailsPage";
 import HistoryPage from "./HistoryPage";
 import { getDashboardMetrics } from "../../utils/reconciliation";
 import {
+  getCompanies,
   getReconciliationSummary,
   openReconciliationStatusStream,
   retryReconciliation,
@@ -113,6 +114,41 @@ export default function Dashboard() {
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [toast, setToast] = useState(null);
   const [companies, setCompanies] = useState([]);
+ 
+useEffect(() => {
+  let isCurrent = true;
+
+  const loadCompanies = async () => {
+    try {
+      const response = await getCompanies({
+        page: 1,
+        limit: 100,
+      });
+
+      if (!isCurrent) return;
+
+      console.log("COMPANIES API RESPONSE:", response);
+
+      const items = Array.isArray(response?.items)
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
+
+      console.log("COMPANIES LIST:", items);
+
+      setCompanies(items);
+    } catch (error) {
+      console.error("Failed to load companies:", error);
+    }
+  };
+
+  loadCompanies();
+
+  return () => {
+    isCurrent = false;
+  };
+}, []);
   // Refs keep values available to async callbacks without re-creating handlers.
   const toastId = useRef(0);
   const notifiedCompletedJobId = useRef("");

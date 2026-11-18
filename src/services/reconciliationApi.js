@@ -1,4 +1,5 @@
 
+/* eslint-disable no-unused-vars */
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 const transactionExportPaths = {

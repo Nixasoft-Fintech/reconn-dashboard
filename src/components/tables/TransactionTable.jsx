@@ -43,9 +43,7 @@ export default function TransactionTable({
   transactions,
   isLoading,
   emptyMessage = "No transaction found",
-  companies,
-  settlementTargets,
-  onSettlementChange,
+  isSettlementDisabled = false,
   onSettle,
 }) {
   return (
@@ -163,48 +161,22 @@ export default function TransactionTable({
                 </td>
                 <td>{transaction.remark ?? "—"}</td>
                 <td>
-                  {/* Only unmatched transactions can be assigned to a settlement target. */}
                   {(transaction.finalStatus ?? transaction.status) ===
                     "Unmatched" ||
                   transaction.finalStatus === "NOT_FOUND" ? (
-                    <div className="settlement-actions">
-                      <select
-                        className="settlement-select"
-                        value={
-                          settlementTargets[transaction.txnId ?? transaction.id] ??
-                          transaction.settleWith ??
-                          ""
-                        }
-                        onChange={(event) =>
-                          onSettlementChange(
-                            transaction.txnId ?? transaction.id,
-                            event.target.value,
-                          )
-                        }
-                        aria-label={`Settle transaction ${transaction.txnId ?? transaction.id} with`}
-                      >
-                        <option value="">Select company</option>
-                        {companies.map((company) => {
-                          const companyId = company.company_id || company.id;
-                          return (
-                            <option key={companyId} value={companyId}>
-                              {company.name}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <button
-                        className="settle-button"
-                        type="button"
-                        disabled={
-                          !settlementTargets[transaction.txnId ?? transaction.id] &&
-                          !transaction.settleWith
-                        }
-                        onClick={() => onSettle(transaction)}
-                      >
-                        Settle
-                      </button>
-                    </div>
+                    <button
+                      className="settle-button"
+                      type="button"
+                      disabled={isSettlementDisabled}
+                      title={
+                        isSettlementDisabled
+                          ? "Manual settlement is only supported for Fund Request and VA Transfer."
+                          : undefined
+                      }
+                      onClick={() => onSettle?.(transaction)}
+                    >
+                      Settle
+                    </button>
                   ) : (
                     "—"
                   )}

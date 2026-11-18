@@ -1010,28 +1010,53 @@ select:focus-visible {
   opacity: 0.5;
 }
 
+.settlement-preview-backdrop {
+  overflow-y: auto;
+  padding: 16px;
+}
+
 .settlement-preview-modal {
-  width: min(500px, 100%);
-  max-height: 90vh;
+  width: min(540px, 100%);
+  max-height: min(88vh, 850px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settlement-modal-scrollable {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
 }
 
 .settlement-preview-details {
   display: grid;
   gap: 0;
   margin: 0;
+  padding: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised, #f8fafc);
 }
 
 .settlement-preview-details > div {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 18px;
-  padding: 11px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.settlement-preview-details > div:last-child {
+  border-bottom: none;
 }
 
 .settlement-preview-details dt {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .settlement-preview-details dd {
@@ -1044,10 +1069,11 @@ select:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.settlement-preview-details > div:last-child dd {
+.settlement-preview-details dd.settlement-amount-highlight {
   color: var(--success);
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .settlement-preview-note {
@@ -1055,6 +1081,60 @@ select:focus-visible {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.settlement-field-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.settlement-field-group label {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.settlement-field-hint {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.settlement-modal-input,
+.settlement-modal-textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settlement-modal-input {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.settlement-modal-textarea {
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.settlement-modal-input:focus,
+.settlement-modal-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.settlement-modal-input:disabled,
+.settlement-modal-textarea:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: var(--surface-muted);
 }
 
 /* Companies */

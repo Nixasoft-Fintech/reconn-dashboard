@@ -6,6 +6,7 @@ import {
   createManualSettlement,
   exportTransactionsCsv,
   getBankTransactions,
+  getCompanies,
   getFundRequests,
   getVaTransactions,
 } from "../../services/reconciliationApi";
@@ -33,15 +34,22 @@ function mapTransaction(item, requestedStatus) {
     item.final_status ?? requestedStatus,
   ).toUpperCase();
 
+  const bankTxnId =
+    item.bank_transaction_id != null
+      ? String(item.bank_transaction_id)
+      : undefined;
+
   return {
     rawItem: item,
     sourceType: item.source_type,
     sourceTransactionId: item.source_transaction_id,
     bankSourceFilename: item.bank_source_filename,
     bankRowNumber: item.bank_row_number,
+    bankTransactionId: item.bank_transaction_id,
 
     txnId:
       item.source_transaction_id ??
+      bankTxnId ??
       (item.bank_row_number != null
         ? `BANK-${item.bank_row_number}`
         : undefined),
@@ -99,18 +107,10 @@ function mapTransaction(item, requestedStatus) {
   };
 }
 
-function matchesTransactionSearch(
-  transaction,
-  settlementTarget,
-  query,
-) {
-  return [
-    ...Object.values(transaction),
-    settlementTarget,
-  ].some(
+function matchesTransactionSearch(transaction, query) {
+  return Object.values(transaction).some(
     (value) =>
-      (typeof value === "string" ||
-        typeof value === "number") &&
+      (typeof value === "string" || typeof value === "number") &&
       String(value).toLowerCase().includes(query),
   );
 }
@@ -133,9 +133,6 @@ export default function TransactionTabs({
 
   const [selectedStatus, setSelectedStatus] =
     useState("Matched");
-
-  const [settlementTargets, setSettlementTargets] =
-    useState({});
 
   const [transactionPage, setTransactionPage] = useState({
     items: [],
@@ -165,23 +162,15 @@ export default function TransactionTabs({
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  const [settlementPreview, setSettlementPreview] =
-    useState(null);
-
-  const [counterpartOptions, setCounterpartOptions] =
-    useState([]);
-
-  const [selectedCounterpartKey, setSelectedCounterpartKey] =
-    useState("");
-
-  const [isLoadingCounterparts, setIsLoadingCounterparts] =
-    useState(false);
-
-  const [settlementRemarks, setSettlementRemarks] =
-    useState("");
-
-  const [isSettling, setIsSettling] = useState(false);
-  const [settleError, setSettleError] = useState("");
+  // Manual Settlement Modal state
+  const [settlementModal, setSettlementModal] = useState(null);
+  const [modalCompanyId, setModalCompanyId] = useState("");
+  const [modalBankTxnId, setModalBankTxnId] = useState("");
+  const [modalRemarks, setModalRemarks] = useState("");
+  const [modalError, setModalError] = useState("");
+  const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
+  const [fetchedCompanies, setFetchedCompanies] = useState([]);
+  const [unmatchedBankTxns, setUnmatchedBankTxns] = useState([]);
 
   const [reloadTrigger, setReloadTrigger] = useState(0);
   const [searchText, setSearchText] = useState("");
@@ -376,15 +365,31 @@ export default function TransactionTabs({
 
   const filteredTransactions = debouncedSearch
     ? transactions.filter((transaction) =>
-        matchesTransactionSearch(
-          transaction,
-          settlementTargets[
-            transaction.txnId ?? transaction.id
-          ],
-          debouncedSearch,
-        ),
+        matchesTransactionSearch(transaction, debouncedSearch),
       )
     : transactions;
+
+  const availableCompanies =
+    Array.isArray(companies) && companies.length > 0
+      ? companies
+      : fetchedCompanies;
+
+  useEffect(() => {
+    if (Array.isArray(companies) && companies.length > 0) return;
+    let isCurrent = true;
+    getCompanies()
+      .then((res) => {
+        if (!isCurrent) return;
+        if (Array.isArray(res?.items)) {
+          setFetchedCompanies(res.items);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [companies]);
 
   const isSearchPending =
     Boolean(jobId && isLiveSource) &&
@@ -440,40 +445,146 @@ export default function TransactionTabs({
     });
   };
 
-  const handleSettlementChange = (
-    transactionId,
-    company,
-  ) => {
-    setSettlementTargets((currentTargets) => ({
-      ...currentTargets,
-      [transactionId]: company,
-    }));
+  const closeSettlementModal = () => {
+    if (isSubmittingSettlement) return;
+    setSettlementModal(null);
+    setModalError("");
+    setModalCompanyId("");
+    setModalBankTxnId("");
+    setModalRemarks("");
+    setIsSubmittingSettlement(false);
   };
 
   const handleSettle = (transaction) => {
-    const transactionId =
-      transaction.txnId ?? transaction.id;
+    if (selectedSource === "Account Statement") {
+      onNotify?.(
+        "info",
+        "Manual settlement is only supported for Fund Request and VA Transfer.",
+      );
+      return;
+    }
 
-    const company =
-      settlementTargets[transactionId] ??
-      transaction.settleWith ??
-      "";
+    const sourceTxnId = String(
+      transaction.sourceTransactionId ??
+      transaction.rawItem?.source_transaction_id ??
+      transaction.txnId ??
+      ""
+    ).trim();
 
-    if (!company) return;
+    if (!sourceTxnId) {
+      onNotify?.(
+        "error",
+        "Primary transaction ID is missing for this record.",
+      );
+      return;
+    }
 
-    setSettlementPreview({
-      transactionId: transactionId ?? "—",
-      reference:
-        transaction.refNum ??
-        transaction.accountUtr ??
-        transaction.accountRefNumber ??
-        "—",
+    const primaryType =
+      selectedSource === "VA Transfer"
+        ? "va_transaction"
+        : "fund_request";
+
+    setSettlementModal({
+      transaction,
+      primaryId: sourceTxnId,
+      primaryType,
+      primaryTypeLabel: selectedSource,
       amount:
         transaction.fundReqAmount ??
         transaction.accountAmount ??
         transaction.amount,
-      company,
+      reference:
+        transaction.refNum ||
+        transaction.accountUtr ||
+        transaction.accountRefNumber ||
+        "—",
     });
+
+    setModalCompanyId(
+      availableCompanies.length === 1
+        ? (availableCompanies[0].company_id || availableCompanies[0].id)
+        : ""
+    );
+    setModalBankTxnId("");
+    setModalRemarks("");
+    setModalError("");
+    setIsSubmittingSettlement(false);
+
+    if (jobId) {
+      getBankTransactions(jobId, { status: "NOT_FOUND", limit: 100 })
+        .then((res) => {
+          if (Array.isArray(res?.items)) {
+            setUnmatchedBankTxns(res.items);
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleConfirmSettlement = async (event) => {
+    event?.preventDefault();
+
+    if (isSubmittingSettlement || !settlementModal || !jobId) {
+      return;
+    }
+
+    setModalError("");
+
+    if (!modalCompanyId) {
+      setModalError("Please select a settlement company.");
+      return;
+    }
+
+    const trimmedBankTxnId = modalBankTxnId.trim();
+    if (!trimmedBankTxnId) {
+      setModalError("Bank Transaction ID is required.");
+      return;
+    }
+
+    if (!settlementModal.primaryId) {
+      setModalError("Primary transaction ID is missing for this record.");
+      return;
+    }
+
+    const payload = {
+      primary: {
+        transaction_type: settlementModal.primaryType,
+        transaction_id: settlementModal.primaryId,
+      },
+      company_id: modalCompanyId,
+      counterpart: {
+        transaction_type: "bank",
+        transaction_id: trimmedBankTxnId,
+      },
+      remarks: modalRemarks.trim(),
+    };
+
+    setIsSubmittingSettlement(true);
+
+    try {
+      await createManualSettlement(jobId, payload);
+
+      onNotify?.(
+        "success",
+        `Transaction ${settlementModal.primaryId} settled successfully.`,
+      );
+
+      setSettlementModal(null);
+      setModalError("");
+      setModalCompanyId("");
+      setModalBankTxnId("");
+      setModalRemarks("");
+
+      setReloadTrigger((v) => v + 1);
+      onRetrySummary?.();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to settle transaction.";
+      setModalError(errorMessage);
+      onNotify?.("error", `Settlement failed: ${errorMessage}`);
+    } finally {
+      setIsSubmittingSettlement(false);
+    }
   };
 
   const exportCSV = async () => {
@@ -759,7 +870,7 @@ export default function TransactionTabs({
             aria-controls="transaction-records-table"
             autoComplete="off"
           />
-
+  
           {searchText && (
             <button
               className="transaction-search-clear"
@@ -815,9 +926,7 @@ export default function TransactionTabs({
             ? `No transaction found for "${searchText.trim()}".`
             : "No transaction found"
         }
-        companies={companies}
-        settlementTargets={settlementTargets}
-        onSettlementChange={handleSettlementChange}
+        isSettlementDisabled={selectedSource === "Account Statement"}
         onSettle={handleSettle}
       />
 
@@ -897,78 +1006,190 @@ export default function TransactionTabs({
         </div>
       )}
 
-      {settlementPreview && (
-        <div className="upload-modal-backdrop settlement-preview-backdrop">
-          <section
+      {settlementModal && (
+        <div
+          className="upload-modal-backdrop settlement-preview-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSubmittingSettlement) {
+              closeSettlementModal();
+            }
+          }}
+        >
+          <form
             className="upload-modal settlement-preview-modal"
+            onSubmit={handleConfirmSettlement}
+            noValidate
             role="dialog"
             aria-modal="true"
-            aria-labelledby="settlement-preview-title"
+            aria-labelledby="manual-settlement-modal-title"
           >
             <header className="upload-modal-header">
               <div>
                 <span className="upload-modal-eyebrow">
-                  SETTLEMENT PREVIEW
+                  MANUAL SETTLEMENT
                 </span>
 
-                <h2 id="settlement-preview-title">
-                  Amount to settle
+                <h2 id="manual-settlement-modal-title">
+                  Settle Unmatched Transaction
                 </h2>
+
+                <p>
+                  Link this {settlementModal.primaryTypeLabel} record to a bank transaction.
+                </p>
               </div>
+
+              <button
+                type="button"
+                className="upload-modal-close"
+                onClick={closeSettlementModal}
+                disabled={isSubmittingSettlement}
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
             </header>
 
-            <div className="upload-modal-content">
+            <div className="upload-modal-content settlement-modal-scrollable">
+              {modalError && (
+                <div
+                  className="company-error-banner"
+                  role="alert"
+                  style={{ marginBottom: "14px" }}
+                >
+                  <span>{modalError}</span>
+                </div>
+              )}
+
+              {/* Transaction Information (Read-only) */}
               <dl className="settlement-preview-details">
                 <div>
-                  <dt>Company</dt>
-                  <dd>{settlementPreview.company}</dd>
+                  <dt>Primary Transaction ID</dt>
+                  <dd>{settlementModal.primaryId}</dd>
                 </div>
 
                 <div>
-                  <dt>Transaction</dt>
-                  <dd>{settlementPreview.transactionId}</dd>
+                  <dt>Primary Transaction Type</dt>
+                  <dd>{settlementModal.primaryTypeLabel}</dd>
                 </div>
 
                 <div>
-                  <dt>Reference</dt>
-                  <dd>{settlementPreview.reference}</dd>
-                </div>
-
-                <div>
-                  <dt>Amount</dt>
-                  <dd>
-                    {formatCurrency(settlementPreview.amount)}
+                  <dt>Transaction Amount</dt>
+                  <dd className="settlement-amount-highlight">
+                    {formatCurrency(settlementModal.amount)}
                   </dd>
+                </div>
+
+                <div>
+                  <dt>Transaction Reference</dt>
+                  <dd>{settlementModal.reference || "—"}</dd>
                 </div>
               </dl>
 
-              <p className="settlement-preview-note">
-                Confirming records your intent only. Settlement
-                processing is not connected yet, so no funds
-                will be transferred.
-              </p>
+              {/* Company Selection */}
+              <div className="settlement-field-group">
+                <label htmlFor="settlement-company-select">
+                  Company <span style={{ color: "var(--danger)" }}>*</span>
+                </label>
+                <select
+                  id="settlement-company-select"
+                  className="settlement-modal-input"
+                  value={modalCompanyId}
+                  onChange={(e) => {
+                    setModalCompanyId(e.target.value);
+                    if (modalError) setModalError("");
+                  }}
+                  disabled={isSubmittingSettlement}
+                  required
+                >
+                  <option value="">Select company</option>
+                  {availableCompanies.map((company) => {
+                    const cId = company.company_id || company.id;
+                    return (
+                      <option key={cId} value={cId}>
+                        {company.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Bank Transaction ID */}
+              <div className="settlement-field-group">
+                <label htmlFor="settlement-bank-id-input">
+                  Bank Transaction ID <span style={{ color: "var(--danger)" }}>*</span>
+                </label>
+                <input
+                  id="settlement-bank-id-input"
+                  type="text"
+                  list="unmatched-bank-txn-list"
+                  className="settlement-modal-input"
+                  value={modalBankTxnId}
+                  onChange={(e) => {
+                    setModalBankTxnId(e.target.value);
+                    if (modalError) setModalError("");
+                  }}
+                  placeholder="Enter bank transaction ID (e.g. 556072)"
+                  disabled={isSubmittingSettlement}
+                  required
+                  autoComplete="off"
+                />
+                <datalist id="unmatched-bank-txn-list">
+                  {unmatchedBankTxns.map((bt) => {
+                    const bId = bt.bank_transaction_id != null ? String(bt.bank_transaction_id) : "";
+                    if (!bId) return null;
+                    const ref = bt.bank_reference || (Array.isArray(bt.bank_extracted_references) ? bt.bank_extracted_references[0] : "") || "";
+                    const amt = bt.bank_amount ? `₹${bt.bank_amount}` : "";
+                    const desc = [amt, ref, bt.bank_narration?.slice(0, 30)].filter(Boolean).join(" | ");
+                    return (
+                      <option key={bId} value={bId}>
+                        {desc ? `ID: ${bId} (${desc})` : `ID: ${bId}`}
+                      </option>
+                    );
+                  })}
+                </datalist>
+                <span className="settlement-field-hint">
+                  Enter the counterpart bank transaction ID (from Account Statement).
+                </span>
+              </div>
+
+              {/* Remarks */}
+              <div className="settlement-field-group">
+                <label htmlFor="settlement-remarks-input">
+                  Remarks <span style={{ color: "var(--muted)", fontWeight: "normal" }}>(Optional)</span>
+                </label>
+                <textarea
+                  id="settlement-remarks-input"
+                  className="settlement-modal-textarea"
+                  value={modalRemarks}
+                  onChange={(e) => setModalRemarks(e.target.value)}
+                  placeholder="Enter settlement notes..."
+                  disabled={isSubmittingSettlement}
+                  rows={3}
+                />
+              </div>
             </div>
 
             <footer className="upload-modal-footer">
-              <div className="upload-modal-actions">
+              <div className="upload-modal-actions" style={{ marginLeft: "auto" }}>
                 <button
                   className="upload-modal-done"
                   type="button"
-                  onClick={() => setSettlementPreview(null)}
+                  disabled={isSubmittingSettlement}
+                  onClick={closeSettlementModal}
                 >
-                  Close
+                  Cancel
                 </button>
 
                 <button
                   className="upload-modal-submit"
-                  type="button"
-                  onClick={() => setSettlementPreview(null)}
+                  type="submit"
+                  disabled={isSubmittingSettlement}
                 >
-                  Confirm to settle
+                  {isSubmittingSettlement ? "Settling..." : "Confirm Settlement"}
                 </button>
               </div>
             </footer>
-          </section>
+          </form>
         </div>
       )}
     </section>
