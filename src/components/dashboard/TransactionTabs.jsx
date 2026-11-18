@@ -23,6 +23,24 @@ function formatCurrency(value) {
     : "—";
 }
 
+function formatTransactionDate(dateValue) {
+  if (!dateValue) return "—";
+  try {
+    const d = new Date(dateValue);
+    if (Number.isNaN(d.getTime())) return String(dateValue);
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  } catch {
+    return String(dateValue);
+  }
+}
+
 function mapTransaction(item, requestedStatus) {
   const extractedReference = Array.isArray(
     item.bank_extracted_references,
@@ -171,6 +189,8 @@ export default function TransactionTabs({
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
   const [fetchedCompanies, setFetchedCompanies] = useState([]);
   const [unmatchedBankTxns, setUnmatchedBankTxns] = useState([]);
+  const [isLoadingBankTxns, setIsLoadingBankTxns] = useState(false);
+  const [isBankSuggestionsOpen, setIsBankSuggestionsOpen] = useState(false);
 
   const [reloadTrigger, setReloadTrigger] = useState(0);
   const [searchText, setSearchText] = useState("");
@@ -453,6 +473,7 @@ export default function TransactionTabs({
     setModalBankTxnId("");
     setModalRemarks("");
     setIsSubmittingSettlement(false);
+    setIsBankSuggestionsOpen(false);
   };
 
   const handleSettle = (transaction) => {
@@ -509,15 +530,20 @@ export default function TransactionTabs({
     setModalRemarks("");
     setModalError("");
     setIsSubmittingSettlement(false);
+    setIsBankSuggestionsOpen(false);
 
     if (jobId) {
+      setIsLoadingBankTxns(true);
       getBankTransactions(jobId, { status: "NOT_FOUND", limit: 100 })
         .then((res) => {
           if (Array.isArray(res?.items)) {
             setUnmatchedBankTxns(res.items);
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          setIsLoadingBankTxns(false);
+        });
     }
   };
 
@@ -681,6 +707,33 @@ export default function TransactionTabs({
     "protocol-error":
       "Received an invalid status update. Waiting for the next event...",
   }[statusConnectionState];
+
+  const filteredBankTxns = unmatchedBankTxns.filter((bt) => {
+    const q = modalBankTxnId.trim().toLowerCase();
+    if (!q) return true;
+    const bId = String(bt.bank_transaction_id ?? "").toLowerCase();
+    const amount = String(bt.bank_amount ?? "").toLowerCase();
+    const ref = String(bt.bank_reference ?? "").toLowerCase();
+    const extRef = Array.isArray(bt.bank_extracted_references)
+      ? bt.bank_extracted_references.join(" ").toLowerCase()
+      : "";
+    const narr = String(bt.bank_narration ?? "").toLowerCase();
+    const bankName = String(bt.bank_name ?? "").toLowerCase();
+    return (
+      bId.includes(q) ||
+      amount.includes(q) ||
+      ref.includes(q) ||
+      extRef.includes(q) ||
+      narr.includes(q) ||
+      bankName.includes(q)
+    );
+  });
+
+  const selectedBankTxn = unmatchedBankTxns.find(
+    (bt) =>
+      bt.bank_transaction_id != null &&
+      String(bt.bank_transaction_id).trim() === modalBankTxnId.trim()
+  );
 
   return (
     <section className="transactions-card">
@@ -1115,40 +1168,190 @@ export default function TransactionTabs({
 
               {/* Bank Transaction ID */}
               <div className="settlement-field-group">
-                <label htmlFor="settlement-bank-id-input">
-                  Bank Transaction ID <span style={{ color: "var(--danger)" }}>*</span>
-                </label>
+                <div className="settlement-label-row">
+                  <label htmlFor="settlement-bank-id-input">
+                    Bank Transaction ID <span style={{ color: "var(--danger)" }}>*</span>
+                  </label>
+                  {unmatchedBankTxns.length > 0 && (
+                    <button
+                      type="button"
+                      className="settlement-toggle-suggestions-btn"
+                      onClick={() => setIsBankSuggestionsOpen((prev) => !prev)}
+                    >
+                      {isBankSuggestionsOpen
+                        ? "Hide Suggestions"
+                        : `Browse Suggestions (${unmatchedBankTxns.length})`}
+                    </button>
+                  )}
+                </div>
+
                 <input
                   id="settlement-bank-id-input"
                   type="text"
-                  list="unmatched-bank-txn-list"
                   className="settlement-modal-input"
                   value={modalBankTxnId}
                   onChange={(e) => {
                     setModalBankTxnId(e.target.value);
                     if (modalError) setModalError("");
+                    if (!isBankSuggestionsOpen) setIsBankSuggestionsOpen(true);
                   }}
-                  placeholder="Enter bank transaction ID (e.g. 556072)"
+                  onFocus={() => {
+                    if (unmatchedBankTxns.length > 0) {
+                      setIsBankSuggestionsOpen(true);
+                    }
+                  }}
+                  placeholder="Enter or select bank transaction ID (e.g. 556072)"
                   disabled={isSubmittingSettlement}
                   required
                   autoComplete="off"
                 />
-                <datalist id="unmatched-bank-txn-list">
-                  {unmatchedBankTxns.map((bt) => {
-                    const bId = bt.bank_transaction_id != null ? String(bt.bank_transaction_id) : "";
-                    if (!bId) return null;
-                    const ref = bt.bank_reference || (Array.isArray(bt.bank_extracted_references) ? bt.bank_extracted_references[0] : "") || "";
-                    const amt = bt.bank_amount ? `₹${bt.bank_amount}` : "";
-                    const desc = [amt, ref, bt.bank_narration?.slice(0, 30)].filter(Boolean).join(" | ");
-                    return (
-                      <option key={bId} value={bId}>
-                        {desc ? `ID: ${bId} (${desc})` : `ID: ${bId}`}
-                      </option>
-                    );
-                  })}
-                </datalist>
+
+                {isBankSuggestionsOpen && (
+                  <div className="settlement-suggestions-dropdown">
+                    <div className="settlement-suggestions-header">
+                      <span>
+                        {isLoadingBankTxns
+                          ? "Loading bank transactions..."
+                          : `Unmatched Bank Records (${filteredBankTxns.length} ${filteredBankTxns.length === 1 ? "match" : "matches"})`}
+                      </span>
+                      <button
+                        type="button"
+                        className="settlement-suggestions-close"
+                        onClick={() => setIsBankSuggestionsOpen(false)}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+
+                    {isLoadingBankTxns ? (
+                      <div className="settlement-suggestions-empty">Loading records...</div>
+                    ) : filteredBankTxns.length === 0 ? (
+                      <div className="settlement-suggestions-empty">
+                        No bank transactions match &ldquo;{modalBankTxnId}&rdquo;. You can still submit this ID manually.
+                      </div>
+                    ) : (
+                      <div className="settlement-suggestions-list">
+                        {filteredBankTxns.map((bt) => {
+                          const bId = bt.bank_transaction_id != null ? String(bt.bank_transaction_id) : "";
+                          const isSelected = String(modalBankTxnId).trim() === bId;
+                          const ref =
+                            bt.bank_reference ||
+                            (Array.isArray(bt.bank_extracted_references)
+                              ? bt.bank_extracted_references[0]
+                              : "") ||
+                            "—";
+                          const amountFormatted = bt.bank_amount ? formatCurrency(bt.bank_amount) : "—";
+                          const dateFormatted = bt.bank_date
+                            ? formatTransactionDate(bt.bank_date)
+                            : bt.bank_value_date
+                              ? formatTransactionDate(bt.bank_value_date)
+                              : "—";
+                          const narration = bt.bank_narration || bt.bank_data?.Particulars || "—";
+                          const bankName = bt.bank_name || "Bank Statement";
+                          const accNumber = bt.bank_account_number ? `Acc: ${bt.bank_account_number}` : "";
+
+                          return (
+                            <div
+                              key={bId || bt.bank_row_number}
+                              className={`settlement-suggestion-item ${isSelected ? "selected" : ""}`}
+                              onClick={() => {
+                                setModalBankTxnId(bId);
+                                setIsBankSuggestionsOpen(false);
+                                if (modalError) setModalError("");
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setModalBankTxnId(bId);
+                                  setIsBankSuggestionsOpen(false);
+                                  if (modalError) setModalError("");
+                                }
+                              }}
+                            >
+                              <div className="suggestion-item-top">
+                                <span className="suggestion-id-pill">
+                                  ID: <strong>{bId}</strong>
+                                </span>
+                                <span className="suggestion-amount-pill">
+                                  {amountFormatted} {bt.bank_direction ? `(${bt.bank_direction})` : ""}
+                                </span>
+                                <span className="suggestion-date">
+                                  {dateFormatted}
+                                </span>
+                              </div>
+
+                              <div className="suggestion-item-mid">
+                                <span className="suggestion-ref">
+                                  <strong>Ref / UTR:</strong> {ref}
+                                </span>
+                                <span className="suggestion-bank">
+                                  {bankName} {accNumber ? `(${accNumber})` : ""}
+                                </span>
+                              </div>
+
+                              <div className="suggestion-item-narration">
+                                <strong>Narration:</strong> {narration}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedBankTxn && !isBankSuggestionsOpen && (
+                  <div className="settlement-selected-preview">
+                    <div className="selected-preview-header">
+                      <span className="selected-badge">
+                        ✓ Selected Bank Record #{selectedBankTxn.bank_transaction_id}
+                      </span>
+                      <button
+                        type="button"
+                        className="selected-change-btn"
+                        onClick={() => setIsBankSuggestionsOpen(true)}
+                      >
+                        Change
+                      </button>
+                    </div>
+                    <div className="selected-preview-body">
+                      <div>
+                        <strong>Amount:</strong> {formatCurrency(selectedBankTxn.bank_amount)}{" "}
+                        {selectedBankTxn.bank_direction ? `(${selectedBankTxn.bank_direction})` : ""}
+                      </div>
+                      <div>
+                        <strong>Date:</strong>{" "}
+                        {selectedBankTxn.bank_date
+                          ? formatTransactionDate(selectedBankTxn.bank_date)
+                          : "—"}
+                      </div>
+                      <div>
+                        <strong>Ref / UTR:</strong>{" "}
+                        {selectedBankTxn.bank_reference ||
+                          (Array.isArray(selectedBankTxn.bank_extracted_references)
+                            ? selectedBankTxn.bank_extracted_references[0]
+                            : "—")}
+                      </div>
+                      <div>
+                        <strong>Bank:</strong> {selectedBankTxn.bank_name || "—"}{" "}
+                        {selectedBankTxn.bank_account_number
+                          ? `(${selectedBankTxn.bank_account_number})`
+                          : ""}
+                      </div>
+                      <div className="selected-narration-full">
+                        <strong>Narration:</strong>{" "}
+                        {selectedBankTxn.bank_narration ||
+                          selectedBankTxn.bank_data?.Particulars ||
+                          "—"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <span className="settlement-field-hint">
-                  Enter the counterpart bank transaction ID (from Account Statement).
+                  Select a bank record from the suggestions above or enter a bank transaction ID manually.
                 </span>
               </div>
 
