@@ -20,6 +20,8 @@ import {
   openReconciliationStatusStream,
   retryReconciliation,
 } from "../../services/reconciliationApi";
+import Settlements from "./SettlementsPage";
+import SettlementsPage from "./SettlementsPage";
 
 // -----------------------------------------------------------------------------
 // Configuration and status helpers
@@ -367,6 +369,23 @@ useEffect(() => {
     },
     [disconnectStatusStream, notify],
   );
+
+  const refreshSummary = useCallback(async () => {
+  const jobId = activeJobIdRef.current;
+
+  if (!jobId) return;
+
+  try {
+    await loadSummary(jobId);
+  } catch (error) {
+    console.error("Failed to refresh summary:", error);
+
+    notify(
+      "error",
+      "Settlement successful, but summary refresh failed."
+    );
+  }
+}, [loadSummary, notify]);
 
   // ---------------------------------------------------------------------------
   // SSE event handler: update status and react to COMPLETED / FAILED.
@@ -734,6 +753,7 @@ useEffect(() => {
                 isWaitingForSummary={
                   Boolean(activeJobId) && !canLoadTransactions
                 }
+                 onSummaryRefresh={refreshSummary}
                 summaryStatus={summaryStatus}
                 jobStatusMessage={jobStatusMessage}
                 statusConnectionState={statusConnectionState}
@@ -756,6 +776,15 @@ useEffect(() => {
           path="/companies"
           element={
             <CompaniesPage
+              companies={companies}
+              onAddCompany={addCompany}
+            />
+          }
+        />
+        <Route
+          path="/settlements"
+          element={
+            <SettlementsPage
               companies={companies}
               onAddCompany={addCompany}
             />

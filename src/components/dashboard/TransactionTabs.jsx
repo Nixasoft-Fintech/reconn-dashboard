@@ -144,6 +144,7 @@ export default function TransactionTabs({
   retryBlockedMessage = "",
   isRetryingSummary = false,
   onRetrySummary,
+  onSummaryRefresh,
   onNotify,
 }) {
   const [selectedSource, setSelectedSource] =
@@ -548,70 +549,78 @@ export default function TransactionTabs({
   };
 
   const handleConfirmSettlement = async (event) => {
-    event?.preventDefault();
+  event?.preventDefault();
 
-    if (isSubmittingSettlement || !settlementModal || !jobId) {
-      return;
-    }
+  if (isSubmittingSettlement || !settlementModal || !jobId) {
+    return;
+  }
 
-    setModalError("");
+  setModalError("");
 
-    if (!modalCompanyId) {
-      setModalError("Please select a settlement company.");
-      return;
-    }
+  if (!modalCompanyId) {
+    setModalError("Please select a settlement company.");
+    return;
+  }
 
-    const trimmedBankTxnId = modalBankTxnId.trim();
-    if (!trimmedBankTxnId) {
-      setModalError("Bank Transaction ID is required.");
-      return;
-    }
+  const trimmedBankTxnId = modalBankTxnId.trim();
 
-    if (!settlementModal.primaryId) {
-      setModalError("Primary transaction ID is missing for this record.");
-      return;
-    }
+  if (!trimmedBankTxnId) {
+    setModalError("Bank Transaction ID is required.");
+    return;
+  }
 
-    const payload = {
-      primary: {
-        transaction_type: settlementModal.primaryType,
-        transaction_id: settlementModal.primaryId,
-      },
-      company_id: modalCompanyId,
-      counterpart: {
-        transaction_type: "bank",
-        transaction_id: trimmedBankTxnId,
-      },
-      remarks: modalRemarks.trim(),
-    };
+  if (!settlementModal.primaryId) {
+    setModalError("Primary transaction ID is missing for this record.");
+    return;
+  }
 
-    setIsSubmittingSettlement(true);
-
-    try {
-      await createManualSettlement(jobId, payload);
-
-      onNotify?.(
-        "success",
-        `Transaction ${settlementModal.primaryId} settled successfully.`,
-      );
-
-      setSettlementModal(null);
-      setModalError("");
-      setModalCompanyId("");
-      setModalBankTxnId("");
-      setModalRemarks("");
-
-      setReloadTrigger((v) => v + 1);
-      onRetrySummary?.();
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to settle transaction.";
-      setModalError(errorMessage);
-      onNotify?.("error", `Settlement failed: ${errorMessage}`);
-    } finally {
-      setIsSubmittingSettlement(false);
-    }
+  const payload = {
+    primary: {
+      transaction_type: settlementModal.primaryType,
+      transaction_id: settlementModal.primaryId,
+    },
+    company_id: modalCompanyId,
+    counterpart: {
+      transaction_type: "bank",
+      transaction_id: trimmedBankTxnId,
+    },
+    remarks: modalRemarks.trim(),
   };
+
+  setIsSubmittingSettlement(true);
+
+  try {
+    await createManualSettlement(jobId, payload);
+
+    onNotify?.(
+      "success",
+      `Transaction ${settlementModal.primaryId} settled successfully.`
+    );
+
+    setSettlementModal(null);
+    setModalError("");
+    setModalCompanyId("");
+    setModalBankTxnId("");
+    setModalRemarks("");
+
+    setReloadTrigger((v) => v + 1);
+
+    // Refresh AI summary after successful settlement
+    await onSummaryRefresh?.();
+
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : "Failed to settle transaction.";
+
+    setModalError(errorMessage);
+    onNotify?.("error", `Settlement failed: ${errorMessage}`);
+
+  } finally {
+    setIsSubmittingSettlement(false);
+  }
+};
 
   const exportCSV = async () => {
     if (!jobId || isExporting) return;
