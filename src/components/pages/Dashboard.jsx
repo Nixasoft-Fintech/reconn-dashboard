@@ -22,6 +22,7 @@ import {
 } from "../../services/reconciliationApi";
 import Settlements from "./SettlementsPage";
 import SettlementsPage from "./SettlementsPage";
+import Login from "./Login";
 
 // -----------------------------------------------------------------------------
 // Configuration and status helpers
@@ -302,9 +303,8 @@ useEffect(() => {
       ) {
         return requestRef.current.promise;
       }
-      const requestPromise = getReconciliationSummary(jobId);
+      const requestPromise = getReconciliationSummary();
       requestRef.current = {
-        jobId,
         promise: requestPromise,
       };
       try {
@@ -797,6 +797,7 @@ useEffect(() => {
           }
         />
         <Route path="/history" element={<HistoryPage />} />
+        <Route path="/login" element={<Login />} />
         <Route
           path="*"
           element={<Navigate to="/" replace />}

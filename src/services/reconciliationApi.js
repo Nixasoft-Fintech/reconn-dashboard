@@ -1,5 +1,6 @@
 
 /* eslint-disable no-unused-vars */
+
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 const transactionExportPaths = {
@@ -13,6 +14,54 @@ const BASE_RETRY_DELAY = 500;
 
 let requestCounter = 0;
 let streamCounter = 0;
+
+
+// ============================================================
+// AUTH TOKEN REFRESH INTERCEPTOR
+// ============================================================
+
+// Prevent multiple refresh requests at the same time.
+let refreshPromise = null;
+
+async function refreshAccessToken() {
+  // Reuse an ongoing refresh request.
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/auth/refresh`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      return response.ok;
+    } catch (error) {
+      console.error("Token refresh failed:", error);
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+function redirectToLogin() {
+  if (window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
+}
+
 
 // ============================================================
 // COMMON HELPERS
@@ -128,11 +177,17 @@ async function readResponse(response) {
 // CENTRALIZED REQUEST WITH RETRY
 // ============================================================
 
+
 async function requestJson(label, url, options = {}) {
   const method = (options.method || "GET").toUpperCase();
 
-  // Automatically retry only safe GET requests.
   const canRetry = method === "GET";
+
+  const isAuthEndpoint =
+    url.includes("/api/auth/login") ||
+    url.includes("/api/auth/refresh");
+
+  let authRetryCount = 0;
 
   for (let attempt = 0; ; attempt += 1) {
     if (options.signal?.aborted) {
@@ -140,7 +195,40 @@ async function requestJson(label, url, options = {}) {
     }
 
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        credentials: "include",
+      });
+
+      // ======================================================
+      // ACCESS TOKEN EXPIRED - REFRESH TOKEN AUTOMATICALLY
+      // ======================================================
+
+      if (
+        response.status === 401 &&
+        !isAuthEndpoint &&
+        authRetryCount === 0
+      ) {
+        authRetryCount += 1;
+
+        const refreshed = await refreshAccessToken();
+
+        if (refreshed) {
+          // Retry original request with refreshed cookie.
+          continue;
+        }
+
+        // Refresh token is also invalid or expired.
+        redirectToLogin();
+
+        throw new Error(
+          "Your session has expired. Please login again."
+        );
+      }
+
+      // ======================================================
+      // NORMAL GET REQUEST RETRY
+      // ======================================================
 
       if (
         canRetry &&
@@ -154,6 +242,7 @@ async function requestJson(label, url, options = {}) {
       }
 
       return await readResponse(response);
+
     } catch (error) {
       const aborted =
         options.signal?.aborted ||
@@ -175,13 +264,13 @@ async function requestJson(label, url, options = {}) {
   }
 }
 
+
 // ============================================================
 // CSV ERROR HANDLING
 // ============================================================
 
 async function getExportErrorMessage(response) {
   const body = await response.text();
-
   const fallbackMessage = `Request failed (${response.status}).`;
 
   if (!body) return fallbackMessage;
@@ -257,6 +346,9 @@ export async function submitReconciliation({
     const request = new XMLHttpRequest();
 
     request.open("POST", `${apiBaseUrl}/api/reconcile`);
+
+    // Include cookies in file upload requests.
+    request.withCredentials = true;
 
     request.upload.addEventListener("progress", (event) => {
       if (!event.lengthComputable) return;
@@ -340,12 +432,11 @@ export async function submitReconciliation({
 // ============================================================
 
 export async function getReconciliationSummary(
-  jobId,
   { signal } = {}
 ) {
   return requestJson(
     "Get reconciliation summary",
-    `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/summary`,
+    `${apiBaseUrl}/api/reconciliation/latest/summary`,
     { signal }
   );
 }
@@ -374,7 +465,10 @@ export function openReconciliationStatusStream(
   const url =
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/events`;
 
-  const source = new EventSource(url);
+  // Include authentication cookies in SSE connection.
+  const source = new EventSource(url, {
+    withCredentials: true,
+  });
 
   const handleEvent = (event) => {
     let payload;
@@ -607,6 +701,7 @@ export async function exportTransactionsCsv(
     try {
       response = await fetch(url, {
         signal,
+        credentials: "include",
         headers: { Accept: "text/csv" },
       });
 
