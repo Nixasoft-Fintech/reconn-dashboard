@@ -211,7 +211,11 @@ export default function HistoryDetailsPage({ companies = [] }) {
         className="history-detail-transactions"
         aria-label={`Transaction records for job ${jobId}`}
       >
-        <TransactionTabs companies={companies} jobId={jobId ?? ""} />
+        <TransactionTabs
+          key={jobId}
+          companies={companies}
+          jobId={jobId}
+        />
       </section>
     </section>
   );

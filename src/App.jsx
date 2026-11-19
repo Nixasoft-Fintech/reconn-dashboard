@@ -1,12 +1,79 @@
-
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "./components/pages/Dashboard";
+import Login from "./components/pages/Login";
+import CompaniesPage from "./components/pages/CompaniesPage";
+import SettlementsPage from "./components/pages/SettlementsPage";
+import HistoryPage from "./components/pages/HistoryPage";
+import HistoryDetailsPage from "./components/pages/HistoryDetailsPage";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import PublicRoute from "./components/auth/PublicRoute";
+import DashboardLayout from "./components/layout/DashboardLayout";
 import "./index.css";
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Dashboard />
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Dashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/companies"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <CompaniesPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settlements"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <SettlementsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <HistoryPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/history/:jobId"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <HistoryDetailsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-
+import { settlements, reverseSettlement } from "../../services/settlementsApi";
+import "./TransactionTabs.css";
 import { Download, Search, X } from "lucide-react";
 
 import TransactionTable from "../tables/TransactionTable";
@@ -20,13 +21,9 @@ import {
 
 } from "../../services/reconciliationApi";
 
-
-
 function formatCurrency(value) {
 
   const amount = Number(value);
-
-
 
   return Number.isFinite(amount)
 
@@ -43,8 +40,6 @@ function formatCurrency(value) {
     : "—";
 
 }
-
-
 
 function formatTransactionDate(dateValue) {
 
@@ -80,8 +75,6 @@ function formatTransactionDate(dateValue) {
 
 }
 
-
-
 function mapTransaction(item, requestedStatus) {
 
   const extractedReference = Array.isArray(
@@ -94,15 +87,11 @@ function mapTransaction(item, requestedStatus) {
 
     : "";
 
-
-
   const finalStatus = String(
 
     item.final_status ?? requestedStatus,
 
   ).toUpperCase();
-
-
 
   const bankTxnId =
 
@@ -111,8 +100,6 @@ function mapTransaction(item, requestedStatus) {
       ? String(item.bank_transaction_id)
 
       : undefined;
-
-
 
   return {
 
@@ -128,8 +115,6 @@ function mapTransaction(item, requestedStatus) {
 
     bankTransactionId: item.bank_transaction_id,
 
-
-
     txnId:
 
       item.source_transaction_id ??
@@ -142,21 +127,15 @@ function mapTransaction(item, requestedStatus) {
 
         : undefined),
 
-
-
     rowNumber: item.source_row_number,
 
     refNum:
 
       item.source_reference_number ?? item.source_reference,
 
-
-
     fundReqAmount: item.source_amount,
 
     user: item.source_user,
-
-
 
     requestDate:
 
@@ -166,8 +145,6 @@ function mapTransaction(item, requestedStatus) {
 
       "",
 
-
-
     requestStatus: item.source_status,
 
     sourceBank: item.source_bank,
@@ -175,8 +152,6 @@ function mapTransaction(item, requestedStatus) {
     paymentMode: item.source_payment_mode,
 
     virtualAccountNumber: item.source_virtual_account_number,
-
-
 
     accountRow: item.bank_row_number,
 
@@ -196,8 +171,6 @@ function mapTransaction(item, requestedStatus) {
 
       item.bank_date ?? item.bank_value_date,
 
-
-
     accountNarration:
 
       item.bank_narration ??
@@ -205,8 +178,6 @@ function mapTransaction(item, requestedStatus) {
       item.bank_data?.Particulars ??
 
       "",
-
-
 
     referenceStatus: item.reference_status,
 
@@ -218,8 +189,6 @@ function mapTransaction(item, requestedStatus) {
 
     finalStatus: item.final_status,
 
-
-
     status:
 
       finalStatus === "MATCHED"
@@ -227,8 +196,6 @@ function mapTransaction(item, requestedStatus) {
         ? "Matched"
 
         : "Unmatched",
-
-
 
     remark:
 
@@ -240,15 +207,11 @@ function mapTransaction(item, requestedStatus) {
 
       "",
 
-
-
     settleWith: "",
 
   };
 
 }
-
-
 
 function matchesTransactionSearch(transaction, query) {
 
@@ -264,28 +227,58 @@ function matchesTransactionSearch(transaction, query) {
 
 }
 
-
 // ============================================================
-// SETTLEMENT HISTORY API PLACEHOLDERS
+// SETTLEMENT HISTORY API
 // ============================================================
-// Connect these two functions to their separate backend endpoints later.
 
-async function fetchAllSettlementsApi(jobId, { signal } = {}) {
-  // TODO: Connect the All Settlements GET API here.
-  // Example: return getAllSettlements(jobId, { signal });
-  void jobId;
-  void signal;
-  return { items: [] };
+const SETTLEMENTS_PAGE_LIMIT = 100;
+
+async function fetchAllSettlementsApi(jobId,{ signal } = {}) {
+  const firstPage = await settlements({
+    jobId,
+    page: 1,
+    limit: SETTLEMENTS_PAGE_LIMIT,
+    signal,
+  });
+
+  if (!Array.isArray(firstPage?.items)) {
+    throw new Error("Settlement API must return an items array.");
+  }
+
+  const allItems = [...firstPage.items];
+  const totalPages = Math.max(1, Number(firstPage.total_pages) || 1);
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    if (signal?.aborted) {
+      throw new DOMException("The request was aborted.", "AbortError");
+    }
+
+    const response = await settlements({
+      page,
+      limit: SETTLEMENTS_PAGE_LIMIT,
+      signal,
+    });
+
+    if (!Array.isArray(response?.items)) {
+      throw new Error("Settlement API must return an items array.");
+    }
+
+    allItems.push(...response.items);
+  }
+
+  return { ...firstPage, items: allItems };
 }
 
-async function fetchReversedSettlementsApi(jobId, { signal } = {}) {
-  // TODO: Connect the Reversed Settlements GET API here.
-  // Example: return getReversedSettlements(jobId, { signal });
-  void jobId;
-  void signal;
-  return { items: [] };
-}
+async function fetchReversedSettlementsApi(jobId,{ signal } = {}) {
+  const response = await fetchAllSettlementsApi({ signal });
 
+  return {
+    ...response,
+    items: response.items.filter(
+      (item) => String(item.status ?? "").toUpperCase() === "REVERSED",
+    ),
+  };
+}
 
 
 export default function TransactionTabs({
@@ -320,21 +313,22 @@ export default function TransactionTabs({
 
     useState("Fund Request");
 
-
-
   const [selectedStatus, setSelectedStatus] =
 
     useState("Matched");
 
-  // "transactions", "all-settlements", or "reversed-settlements"
+  // "transactions", "all-settlements", or "reversed-settlements"*
+
   const [activeTab, setActiveTab] = useState("transactions");
+
   const [settlementHistory, setSettlementHistory] = useState([]);
+
   const [isLoadingSettlementHistory, setIsLoadingSettlementHistory] =
+
     useState(false);
+
   const [settlementHistoryError, setSettlementHistoryError] = useState("");
-
-
-
+  const [reversingSettlementId, setReversingSettlementId] = useState("");
 
   const [transactionPage, setTransactionPage] = useState({
 
@@ -350,13 +344,9 @@ export default function TransactionTabs({
 
   });
 
-
-
   const [loadedSelection, setLoadedSelection] =
 
     useState(null);
-
-
 
   const [pageSelection, setPageSelection] = useState({
 
@@ -370,29 +360,21 @@ export default function TransactionTabs({
 
   });
 
-
-
   const [pageSize, setPageSize] = useState(25);
 
   const [isLoadingTransactions, setIsLoadingTransactions] =
 
     useState(false);
 
-
-
   const [transactionsError, setTransactionsError] =
 
     useState("");
-
-
 
   const [isExporting, setIsExporting] = useState(false);
 
   const [exportError, setExportError] = useState("");
 
-
-
-  // Manual Settlement Modal state
+  // Manual Settlement Modal state*
 
   const [settlementModal, setSettlementModal] = useState(null);
 
@@ -414,15 +396,11 @@ export default function TransactionTabs({
 
   const [isBankSuggestionsOpen, setIsBankSuggestionsOpen] = useState(false);
 
-
-
   const [reloadTrigger, setReloadTrigger] = useState(0);
 
   const [searchText, setSearchText] = useState("");
 
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
-
 
   const currentPage =
 
@@ -436,8 +414,6 @@ export default function TransactionTabs({
 
       : 1;
 
-
-
   const isLiveSource =
 
     selectedSource === "Fund Request" ||
@@ -445,8 +421,6 @@ export default function TransactionTabs({
     selectedSource === "VA Transfer" ||
 
     selectedSource === "Account Statement";
-
-
 
   const isLoadedSelectionCurrent =
 
@@ -459,8 +433,6 @@ export default function TransactionTabs({
     loadedSelection?.page === currentPage &&
 
     loadedSelection?.pageSize === pageSize;
-
-
 
   const isLoadingDisplayedData =
 
@@ -478,8 +450,6 @@ export default function TransactionTabs({
 
     );
 
-
-
   useEffect(() => {
 
     const timeoutId = window.setTimeout(() => {
@@ -492,13 +462,9 @@ export default function TransactionTabs({
 
     }, 350);
 
-
-
     return () => window.clearTimeout(timeoutId);
 
   }, [searchText]);
-
-
 
   useEffect(() => {
 
@@ -508,13 +474,9 @@ export default function TransactionTabs({
 
     }
 
-
-
     const controller = new AbortController();
 
     let isCurrentRequest = true;
-
-
 
     const requestSelection = {
 
@@ -529,8 +491,6 @@ export default function TransactionTabs({
       pageSize,
 
     };
-
-
 
     const loadTransactions = async () => {
 
@@ -548,13 +508,9 @@ export default function TransactionTabs({
 
       });
 
-
-
       setIsLoadingTransactions(true);
 
       setTransactionsError("");
-
-
 
       try {
 
@@ -565,8 +521,6 @@ export default function TransactionTabs({
             ? "MATCHED"
 
             : "NOT_FOUND";
-
-
 
         const getTransactions =
 
@@ -580,8 +534,6 @@ export default function TransactionTabs({
 
               : getBankTransactions;
 
-
-
         const response = await getTransactions(jobId, {
 
           status,
@@ -593,8 +545,6 @@ export default function TransactionTabs({
           signal: controller.signal,
 
         });
-
-
 
         console.log("TRANSACTION DATA UPDATED:", {
 
@@ -610,8 +560,6 @@ export default function TransactionTabs({
 
 });
 
-
-
         if (!Array.isArray(response.items)) {
 
           throw new Error(
@@ -622,15 +570,11 @@ export default function TransactionTabs({
 
         }
 
-
-
         const total = Number(
 
           response.total ?? response.items.length,
 
         );
-
-
 
         const totalPages = Number(
 
@@ -639,8 +583,6 @@ export default function TransactionTabs({
             Math.ceil(total / pageSize),
 
         );
-
-
 
         if (
 
@@ -657,8 +599,6 @@ export default function TransactionTabs({
           );
 
         }
-
-
 
         if (isCurrentRequest) {
 
@@ -687,8 +627,6 @@ export default function TransactionTabs({
               currentPage > 1,
 
           });
-
-
 
           setLoadedSelection(requestSelection);
 
@@ -720,8 +658,6 @@ export default function TransactionTabs({
 
           );
 
-
-
           onNotify?.(
 
             "error",
@@ -733,8 +669,6 @@ export default function TransactionTabs({
               : "Unable to load reconciliation transactions.",
 
           );
-
-
 
           setLoadedSelection(requestSelection);
 
@@ -752,11 +686,7 @@ export default function TransactionTabs({
 
     };
 
-
-
     void loadTransactions();
-
-
 
     return () => {
 
@@ -767,6 +697,7 @@ export default function TransactionTabs({
     };
 
   }, [
+
     activeTab,
 
     currentPage,
@@ -787,8 +718,6 @@ export default function TransactionTabs({
 
   ]);
 
-
-
   const transactions =
 
     isLiveSource && jobId
@@ -797,76 +726,100 @@ export default function TransactionTabs({
 
       : [];
 
-  // Each settlement-history tab calls its own API function.
-  useEffect(() => {
-    if (
-      activeTab !== "all-settlements" &&
-      activeTab !== "reversed-settlements"
-    ) {
-      return undefined;
-    }
+  // Each settlement-history tab calls its own API function.*
 
-    if (!jobId) {
-      setSettlementHistory([]);
-      setSettlementHistoryError(
-        "Run a reconciliation to view settlement records.",
-      );
-      return undefined;
-    }
+  
+useEffect(() => {
+  if (
+    activeTab !== "all-settlements" &&
+    activeTab !== "reversed-settlements"
+  ) {
+    return undefined;
+  }
 
-    const controller = new AbortController();
-    let isCurrentRequest = true;
+  if (!jobId) {
+    setSettlementHistory([]);
+    setSettlementHistoryError(
+      "Run a reconciliation to view settlement records."
+    );
+    return undefined;
+  }
 
-    const loadSettlementHistory = async () => {
-      setIsLoadingSettlementHistory(true);
-      setSettlementHistoryError("");
-      setSettlementHistory([]);
+  const controller = new AbortController();
+  let isCurrentRequest = true;
 
-      try {
-        const response =
-          activeTab === "all-settlements"
-            ? await fetchAllSettlementsApi(jobId, {
-                signal: controller.signal,
-              })
-            : await fetchReversedSettlementsApi(jobId, {
-                signal: controller.signal,
-              });
+  const loadSettlementHistory = async () => {
+    setIsLoadingSettlementHistory(true);
+    setSettlementHistoryError("");
+    setSettlementHistory([]);
 
-        if (!Array.isArray(response?.items)) {
-          throw new Error("Settlement API must return an items array.");
-        }
+    try {
+      const response =
+        activeTab === "all-settlements"
+          ? await fetchAllSettlementsApi(jobId, {
+              signal: controller.signal,
+            })
+          : await fetchReversedSettlementsApi(jobId, {
+              signal: controller.signal,
+            });
 
-        if (isCurrentRequest) {
-          setSettlementHistory(response.items);
-        }
-      } catch (error) {
-        if (
-          isCurrentRequest &&
-          !(error instanceof Error && error.name === "AbortError")
-        ) {
-          setSettlementHistoryError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load settlement records.",
-          );
-        }
-      } finally {
-        if (isCurrentRequest) {
-          setIsLoadingSettlementHistory(false);
-        }
+      if (!Array.isArray(response?.items)) {
+        throw new Error("Settlement API must return an items array.");
       }
-    };
 
-    void loadSettlementHistory();
+      if (isCurrentRequest) {
+        setSettlementHistory(response.items);
+      }
+    } catch (error) {
+      if (
+        isCurrentRequest &&
+        !(error instanceof Error && error.name === "AbortError")
+      ) {
+        setSettlementHistoryError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load settlement records."
+        );
+      }
+    } finally {
+      if (isCurrentRequest) {
+        setIsLoadingSettlementHistory(false);
+      }
+    }
+  };
 
-    return () => {
-      isCurrentRequest = false;
-      controller.abort();
-    };
-  }, [activeTab, jobId, reloadTrigger]);
+  void loadSettlementHistory();
+
+  return () => {
+    isCurrentRequest = false;
+    controller.abort();
+  };
+}, [activeTab, jobId, reloadTrigger]);
 
 
+  const handleReverseSettlement = async (record) => {
+    const settlementId = record?.settlement_id;
+    if (!settlementId || reversingSettlementId) return;
 
+    const confirmed = window.confirm(
+      `Are you sure you want to reverse settlement ${settlementId}?`,
+    );
+    if (!confirmed) return;
+
+    setReversingSettlementId(String(settlementId));
+    try {
+      await reverseSettlement(settlementId);
+      onNotify?.("success", `Settlement ${settlementId} reversed successfully.`);
+      setReloadTrigger((value) => value + 1);
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Unable to reverse settlement.";
+      onNotify?.("error", `Could not reverse settlement: ${message}`);
+    } finally {
+      setReversingSettlementId("");
+    }
+  };
 
   const filteredTransactions = debouncedSearch
 
@@ -878,8 +831,6 @@ export default function TransactionTabs({
 
     : transactions;
 
-
-
   const availableCompanies =
 
     Array.isArray(companies) && companies.length > 0
@@ -887,8 +838,6 @@ export default function TransactionTabs({
       ? companies
 
       : fetchedCompanies;
-
-
 
   useEffect(() => {
 
@@ -912,8 +861,6 @@ export default function TransactionTabs({
 
       .catch(() => {});
 
-
-
     return () => {
 
       isCurrent = false;
@@ -922,15 +869,11 @@ export default function TransactionTabs({
 
   }, [companies]);
 
-
-
   const isSearchPending =
 
     Boolean(jobId && isLiveSource) &&
 
     searchText.trim().toLowerCase() !== debouncedSearch;
-
-
 
   const transactionCount =
 
@@ -940,21 +883,15 @@ export default function TransactionTabs({
 
       : transactions.length;
 
-
-
   const displayedCount = debouncedSearch
 
     ? filteredTransactions.length
 
     : transactionCount;
 
-
-
   const isLoadingTransactionsOrSearch =
 
     isLoadingDisplayedData || isSearchPending;
-
-
 
   const transactionCountTone =
 
@@ -967,8 +904,6 @@ export default function TransactionTabs({
         ? "success"
 
         : "danger";
-
-
 
   const transactionCountLabel = isWaitingForSummary
 
@@ -1006,33 +941,47 @@ export default function TransactionTabs({
 
               )} of ${transactionCount} transactions`;
 
-
-
   const selectTab = (source, status) => {
+
     setActiveTab("transactions");
+
     setSelectedSource(source);
+
     setSelectedStatus(status);
+
     setSearchText("");
+
     setDebouncedSearch("");
 
     setPageSelection({
+
       jobId,
+
       source,
+
       status,
+
       page: 1,
+
     });
+
   };
 
   const selectSettlementTab = (tab) => {
+
     setActiveTab(tab);
+
     setSettlementModal(null);
+
     setSearchText("");
+
     setDebouncedSearch("");
+
     setSettlementHistory([]);
+
     setSettlementHistoryError("");
+
   };
-
-
 
   const closeSettlementModal = () => {
 
@@ -1054,8 +1003,6 @@ export default function TransactionTabs({
 
   };
 
-
-
   const handleSettle = (transaction) => {
 
     if (selectedSource === "Account Statement") {
@@ -1072,8 +1019,6 @@ export default function TransactionTabs({
 
     }
 
-
-
     const sourceTxnId = String(
 
       transaction.sourceTransactionId ??
@@ -1085,8 +1030,6 @@ export default function TransactionTabs({
       ""
 
     ).trim();
-
-
 
     if (!sourceTxnId) {
 
@@ -1102,8 +1045,6 @@ export default function TransactionTabs({
 
     }
 
-
-
     const primaryType =
 
       selectedSource === "VA Transfer"
@@ -1111,8 +1052,6 @@ export default function TransactionTabs({
         ? "va_transaction"
 
         : "fund_request";
-
-
 
     setSettlementModal({
 
@@ -1144,8 +1083,6 @@ export default function TransactionTabs({
 
     });
 
-
-
     setModalCompanyId(
 
       availableCompanies.length === 1
@@ -1165,8 +1102,6 @@ export default function TransactionTabs({
     setIsSubmittingSettlement(false);
 
     setIsBankSuggestionsOpen(false);
-
-
 
     if (jobId) {
 
@@ -1196,13 +1131,9 @@ export default function TransactionTabs({
 
   };
 
-
-
   const handleConfirmSettlement = async (event) => {
 
   event?.preventDefault();
-
-
 
   if (isSubmittingSettlement || !settlementModal || !jobId) {
 
@@ -1210,11 +1141,7 @@ export default function TransactionTabs({
 
   }
 
-
-
   setModalError("");
-
-
 
   if (!modalCompanyId) {
 
@@ -1224,11 +1151,7 @@ export default function TransactionTabs({
 
   }
 
-
-
   const trimmedBankTxnId = modalBankTxnId.trim();
-
-
 
   if (!trimmedBankTxnId) {
 
@@ -1238,8 +1161,6 @@ export default function TransactionTabs({
 
   }
 
-
-
   if (!settlementModal.primaryId) {
 
     setModalError("Primary transaction ID is missing for this record.");
@@ -1247,8 +1168,6 @@ export default function TransactionTabs({
     return;
 
   }
-
-
 
   const payload = {
 
@@ -1274,17 +1193,11 @@ export default function TransactionTabs({
 
   };
 
-
-
   setIsSubmittingSettlement(true);
-
-
 
   try {
 
     await createManualSettlement(jobId, payload);
-
-
 
     onNotify?.(
 
@@ -1293,8 +1206,6 @@ export default function TransactionTabs({
       `Transaction ${settlementModal.primaryId} settled successfully.`
 
     );
-
-
 
     setSettlementModal(null);
 
@@ -1306,17 +1217,11 @@ export default function TransactionTabs({
 
     setModalRemarks("");
 
-
-
     setReloadTrigger((v) => v + 1);
 
-
-
-    // Refresh AI summary after successful settlement
+    // Refresh AI summary after successful settlement*
 
     await onSummaryRefresh?.();
-
-
 
   } catch (err) {
 
@@ -1328,13 +1233,9 @@ export default function TransactionTabs({
 
         : "Failed to settle transaction.";
 
-
-
     setModalError(errorMessage);
 
     onNotify?.("error", `Settlement failed: ${errorMessage}`);
-
-
 
   } finally {
 
@@ -1344,19 +1245,13 @@ export default function TransactionTabs({
 
 };
 
-
-
   const exportCSV = async () => {
 
     if (!jobId || isExporting) return;
 
-
-
     setIsExporting(true);
 
     setExportError("");
-
-
 
     try {
 
@@ -1376,31 +1271,21 @@ export default function TransactionTabs({
 
         });
 
-
-
       onNotify?.("success", "Transaction CSV downloaded.");
-
-
 
       const url = URL.createObjectURL(blob);
 
       const link = document.createElement("a");
 
-
-
       link.href = url;
 
       link.download = filename;
-
-
 
       document.body.append(link);
 
       link.click();
 
       link.remove();
-
-
 
       window.setTimeout(
 
@@ -1420,11 +1305,7 @@ export default function TransactionTabs({
 
           : "Unable to export transactions.";
 
-
-
       setExportError(message);
-
-
 
       onNotify?.(
 
@@ -1442,15 +1323,11 @@ export default function TransactionTabs({
 
   };
 
-
-
   const normalizedStatus = String(
 
     summaryStatus ?? "",
 
   ).trim().toUpperCase();
-
-
 
   const isPending = normalizedStatus === "PENDING";
 
@@ -1459,8 +1336,6 @@ export default function TransactionTabs({
   const isCompleted = normalizedStatus === "COMPLETED";
 
   const isFailed = normalizedStatus === "FAILED";
-
-
 
   const currentStatusMessage =
 
@@ -1484,8 +1359,6 @@ export default function TransactionTabs({
 
             : "No reconciliation status available.");
 
-
-
   const statusTone = isCompleted
 
     ? "success"
@@ -1496,13 +1369,9 @@ export default function TransactionTabs({
 
       : "neutral";
 
-
-
   const showRetryButton =
 
     isFailed && canRetrySummary;
-
-
 
   const showRetryBlockedMessage =
 
@@ -1511,8 +1380,6 @@ export default function TransactionTabs({
     !canRetrySummary &&
 
     retryBlockedMessage;
-
-
 
   const connectionMessage = {
 
@@ -1533,8 +1400,6 @@ export default function TransactionTabs({
       "Received an invalid status update. Waiting for the next event...",
 
   }[statusConnectionState];
-
-
 
   const filteredBankTxns = unmatchedBankTxns.filter((bt) => {
 
@@ -1576,8 +1441,6 @@ export default function TransactionTabs({
 
   });
 
-
-
   const selectedBankTxn = unmatchedBankTxns.find(
 
     (bt) =>
@@ -1587,8 +1450,6 @@ export default function TransactionTabs({
       String(bt.bank_transaction_id).trim() === modalBankTxnId.trim()
 
   );
-
-
 
   return (
 
@@ -1603,8 +1464,6 @@ export default function TransactionTabs({
           <p>View source-wise transaction details</p>
 
         </div>
-
-
 
         <div className="records-toolbar-actions">
 
@@ -1628,15 +1487,11 @@ export default function TransactionTabs({
 
             </span>
 
-
-
             <span className="reconciliation-status-message">
 
               {currentStatusMessage}
 
             </span>
-
-
 
             {connectionMessage &&
 
@@ -1658,8 +1513,6 @@ export default function TransactionTabs({
 
               )}
 
-
-
             {showRetryBlockedMessage && (
 
               <span className="reconciliation-status-note">
@@ -1669,8 +1522,6 @@ export default function TransactionTabs({
               </span>
 
             )}
-
-
 
             {showRetryButton && (
 
@@ -1698,9 +1549,8 @@ export default function TransactionTabs({
 
           </div>
 
-
-
 {activeTab === "transactions" && (
+
           <button
 
             className="export-btn"
@@ -1728,13 +1578,12 @@ export default function TransactionTabs({
             {isExporting ? "Exporting..." : "Export CSV"}
 
           </button>
+
           )}
 
         </div>
 
       </div>
-
-
 
       {exportError && activeTab === "transactions" && (
 
@@ -1745,8 +1594,6 @@ export default function TransactionTabs({
         </p>
 
       )}
-
-
 
       <div className="transaction-tabs">
 
@@ -1778,8 +1625,6 @@ export default function TransactionTabs({
 
         </button>
 
-
-
         <button
 
           className={
@@ -1807,8 +1652,6 @@ export default function TransactionTabs({
           Fund Request Unmatched
 
         </button>
-
-
 
         <button
 
@@ -1838,8 +1681,6 @@ export default function TransactionTabs({
 
         </button>
 
-
-
         <button
 
           className={
@@ -1867,8 +1708,6 @@ export default function TransactionTabs({
           VA Transfer Unmatched
 
         </button>
-
-
 
         <button
 
@@ -1898,8 +1737,6 @@ export default function TransactionTabs({
 
         </button>
 
-
-
         <button
 
           className={
@@ -1928,41 +1765,53 @@ export default function TransactionTabs({
 
         </button>
 
-
-
          <button
+
           type="button"
+
           className={
+
             activeTab === "all-settlements" ? "tab active" : "tab"
+
           }
+
           onClick={() => selectSettlementTab("all-settlements")}
+
         >
+
           All Settlements
+
         </button>
 
         <button
+
           type="button"
+
           className={
+
             activeTab === "reversed-settlements" ? "tab active" : "tab"
+
           }
+
           onClick={() => selectSettlementTab("reversed-settlements")}
+
         >
+
           Reversed Settlements
+
         </button>
 
       </div>
 
-
-
       {activeTab === "transactions" ? (
+
         <>
+
       <div className="transaction-search-row">
 
         <div className="transaction-search-control">
 
           <Search size={17} aria-hidden="true" />
-
-
 
           <label
 
@@ -1975,8 +1824,6 @@ export default function TransactionTabs({
             Search transaction records on this page
 
           </label>
-
-
 
           <input
 
@@ -2004,8 +1851,6 @@ export default function TransactionTabs({
 
           />
 
-
-
           {searchText && (
 
             <button
@@ -2028,8 +1873,6 @@ export default function TransactionTabs({
 
         </div>
 
-
-
         <p
 
           className="transaction-search-hint"
@@ -2043,8 +1886,6 @@ export default function TransactionTabs({
         </p>
 
       </div>
-
-
 
       <div className="transaction-table-meta">
 
@@ -2062,13 +1903,9 @@ export default function TransactionTabs({
 
         </span>
 
-
-
         <span>Scroll horizontally to view all fields</span>
 
       </div>
-
-
 
       {isLiveSource &&
 
@@ -2084,8 +1921,6 @@ export default function TransactionTabs({
 
         )}
 
-
-
       {isLiveSource && transactionsError && (
 
         <p className="upload-submit-error" role="alert">
@@ -2095,8 +1930,6 @@ export default function TransactionTabs({
         </p>
 
       )}
-
-
 
       <TransactionTable
 
@@ -2122,8 +1955,6 @@ export default function TransactionTabs({
 
       />
 
-
-
       {isLiveSource && jobId && (
 
         <div className="transaction-pagination">
@@ -2131,8 +1962,6 @@ export default function TransactionTabs({
           <label>
 
             Rows per page
-
-
 
             <select
 
@@ -2148,11 +1977,7 @@ export default function TransactionTabs({
 
                 );
 
-
-
                 setPageSize(nextPageSize);
-
-
 
                 setPageSelection({
 
@@ -2184,8 +2009,6 @@ export default function TransactionTabs({
 
           </label>
 
-
-
           <div className="transaction-pagination-controls">
 
             <span>
@@ -2195,8 +2018,6 @@ export default function TransactionTabs({
               {Math.max(transactionPage.totalPages, 1)}
 
             </span>
-
-
 
             <button
 
@@ -2231,8 +2052,6 @@ export default function TransactionTabs({
               Previous
 
             </button>
-
-
 
             <button
 
@@ -2274,83 +2093,173 @@ export default function TransactionTabs({
 
       )}
 
-
-
         </>
+
       ) : (
+
         <div className="settlement-history-panel">
+
           <div className="transaction-table-meta">
+
             <span className="transaction-count transaction-count-neutral">
+
               {activeTab === "all-settlements"
+
                 ? "All Settlements"
+
                 : "Reversed Settlements"}
+
             </span>
+
             <span>
+
               {isLoadingSettlementHistory
+
                 ? "Loading records..."
+
                 : `${settlementHistory.length} records`}
+
             </span>
+
           </div>
 
           {settlementHistoryError ? (
+
             <p className="session-note" role="alert">
+
               {settlementHistoryError}
+
             </p>
+
           ) : isLoadingSettlementHistory ? (
+
             <p className="session-note" role="status">
+
               Loading settlement records...
+
             </p>
+
           ) : settlementHistory.length === 0 ? (
+
             <p className="session-note">
-              No records to display. Settlement API integration will be added here.
+
+              No settlement records found for this tab.
+
             </p>
+
           ) : (
+
             <div className="table-responsive">
+
               <table className="data-table">
+
                 <thead>
+
                   <tr>
+
                     <th>Settlement ID</th>
+
                     <th>Primary Transaction ID</th>
+
                     <th>Bank Transaction ID</th>
+
                     <th>Company</th>
+
                     <th>Amount</th>
+
                     <th>Date</th>
+
                     <th>Status</th>
+
+                    {activeTab === "all-settlements" && <th>Action</th>}
+
                   </tr>
+
                 </thead>
+
                 <tbody>
+
                   {settlementHistory.map((record, index) => (
+
                     <tr key={record.settlement_id || record.id || index}>
+
                       <td>{record.settlement_id || record.id || "—"}</td>
+
                       <td>
+
                         {record.primary?.transaction_id ||
+
                           record.primary_transaction_id ||
+
                           "—"}
+
                       </td>
+
                       <td>
+
                         {record.counterpart?.transaction_id ||
+
                           record.bank_transaction_id ||
+
                           "—"}
+
                       </td>
+
                       <td>{record.company_name || record.company?.name || "—"}</td>
+
                       <td>
+
                         {formatCurrency(
+
                           record.amount ?? record.settlement_amount,
+
                         )}
+
                       </td>
+
                       <td>
+
                         {formatTransactionDate(
+
                           record.created_at || record.settled_at,
+
                         )}
+
                       </td>
+
                       <td>{record.status || "—"}</td>
+
+                      {activeTab === "all-settlements" && (
+                        <td>
+                          {String(record.status ?? "").toUpperCase() === "ACTIVE" && (
+                            <button
+                              type="button"
+                              className="tab"
+                              disabled={Boolean(reversingSettlementId)}
+                              onClick={() => handleReverseSettlement(record)}
+                            >
+                              {reversingSettlementId === String(record.settlement_id)
+                                ? "Reversing..."
+                                : "Reverse"}
+                            </button>
+                          )}
+                        </td>
+                      )}
+
                     </tr>
+
                   ))}
+
                 </tbody>
+
               </table>
+
             </div>
+
           )}
+
         </div>
+
       )}
 
       {activeTab === "transactions" && settlementModal && (
@@ -2397,15 +2306,11 @@ export default function TransactionTabs({
 
                 </span>
 
-
-
                 <h2 id="manual-settlement-modal-title">
 
                   Settle Unmatched Transaction
 
                 </h2>
-
-
 
                 <p>
 
@@ -2414,8 +2319,6 @@ export default function TransactionTabs({
                 </p>
 
               </div>
-
-
 
               <button
 
@@ -2437,8 +2340,6 @@ export default function TransactionTabs({
 
             </header>
 
-
-
             <div className="upload-modal-content settlement-modal-scrollable">
 
               {modalError && (
@@ -2459,8 +2360,6 @@ export default function TransactionTabs({
 
               )}
 
-
-
               {/* Transaction Information (Read-only) */}
 
               <dl className="settlement-preview-details">
@@ -2473,8 +2372,6 @@ export default function TransactionTabs({
 
                 </div>
 
-
-
                 <div>
 
                   <dt>Primary Transaction Type</dt>
@@ -2482,8 +2379,6 @@ export default function TransactionTabs({
                   <dd>{settlementModal.primaryTypeLabel}</dd>
 
                 </div>
-
-
 
                 <div>
 
@@ -2497,8 +2392,6 @@ export default function TransactionTabs({
 
                 </div>
 
-
-
                 <div>
 
                   <dt>Transaction Reference</dt>
@@ -2508,8 +2401,6 @@ export default function TransactionTabs({
                 </div>
 
               </dl>
-
-
 
               {/* Company Selection */}
 
@@ -2565,8 +2456,6 @@ export default function TransactionTabs({
 
               </div>
 
-
-
               {/* Bank Transaction ID */}
 
               <div className="settlement-field-group">
@@ -2602,8 +2491,6 @@ export default function TransactionTabs({
                   )}
 
                 </div>
-
-
 
                 <input
 
@@ -2645,8 +2532,6 @@ export default function TransactionTabs({
 
                 />
 
-
-
                 {isBankSuggestionsOpen && (
 
                   <div className="settlement-suggestions-dropdown">
@@ -2678,8 +2563,6 @@ export default function TransactionTabs({
                       </button>
 
                     </div>
-
-
 
                     {isLoadingBankTxns ? (
 
@@ -2732,8 +2615,6 @@ export default function TransactionTabs({
                           const bankName = bt.bank_name || "Bank Statement";
 
                           const accNumber = bt.bank_account_number ? `Acc: ${bt.bank_account_number}` : "";
-
-
 
                           return (
 
@@ -2797,8 +2678,6 @@ export default function TransactionTabs({
 
                               </div>
 
-
-
                               <div className="suggestion-item-mid">
 
                                 <span className="suggestion-ref">
@@ -2814,8 +2693,6 @@ export default function TransactionTabs({
                                 </span>
 
                               </div>
-
-
 
                               <div className="suggestion-item-narration">
 
@@ -2836,8 +2713,6 @@ export default function TransactionTabs({
                   </div>
 
                 )}
-
-
 
                 {selectedBankTxn && !isBankSuggestionsOpen && (
 
@@ -2933,8 +2808,6 @@ export default function TransactionTabs({
 
                 )}
 
-
-
                 <span className="settlement-field-hint">
 
                   Select a bank record from the suggestions above or enter a bank transaction ID manually.
@@ -2942,8 +2815,6 @@ export default function TransactionTabs({
                 </span>
 
               </div>
-
-
 
               {/* Remarks */}
 
@@ -2977,8 +2848,6 @@ export default function TransactionTabs({
 
             </div>
 
-
-
             <footer className="upload-modal-footer">
 
               <div className="upload-modal-actions" style={{ marginLeft: "auto" }}>
@@ -2998,8 +2867,6 @@ export default function TransactionTabs({
                   Cancel
 
                 </button>
-
-
 
                 <button
 

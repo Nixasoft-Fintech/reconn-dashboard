@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-import DashboardLayout from "../layout/DashboardLayout";
 import Header from "../layout/Header";
 import SummaryCard from "../dashboard/SummaryCard";
 import ReconciliationCard from "../dashboard/ReconciliationCard";
@@ -10,9 +8,6 @@ import {
   SummarySkeleton,
 } from "../dashboard/DataSkeletons";
 import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
-import CompaniesPage from "./CompaniesPage";
-import HistoryDetailsPage from "./HistoryDetailsPage";
-import HistoryPage from "./HistoryPage";
 import { getDashboardMetrics } from "../../utils/reconciliation";
 import {
   getCompanies,
@@ -20,9 +15,6 @@ import {
   openReconciliationStatusStream,
   retryReconciliation,
 } from "../../services/reconciliationApi";
-import Settlements from "./SettlementsPage";
-import SettlementsPage from "./SettlementsPage";
-import Login from "./Login";
 
 // -----------------------------------------------------------------------------
 // Configuration and status helpers
@@ -39,19 +31,18 @@ const normalizeStatus = (value) =>
 const getFailureCode = (payload = {}) =>
   String(
     payload?.failure_code ??
-      payload?.failureCode ??
-      payload?.failure_code_value ??
-      "",
+    payload?.failureCode ??
+    payload?.failure_code_value ??
+    "",
   ).trim();
 
 const isServerRestartFailure = (payload = {}) => {
   const failureCode = getFailureCode(payload).toUpperCase();
-  const searchableText = `${failureCode} ${
-    payload?.message ??
+  const searchableText = `${failureCode} ${payload?.message ??
     payload?.failure_message ??
     payload?.failureMessage ??
     ""
-  }`.toLowerCase();
+    }`.toLowerCase();
   return /(server.*restart|restart.*server|memory.*state|in-memory.*state|state.*lost|processing.*state.*lost|lost.*processing|resume.*not.*possible)/.test(
     searchableText,
   );
@@ -86,9 +77,9 @@ const getDefaultStatusMessage = (status, fallbackMessage = "") => {
 const getResponseMessage = (payload = {}) =>
   String(
     payload?.message ??
-      payload?.failure_message ??
-      payload?.failureMessage ??
-      "",
+    payload?.failure_message ??
+    payload?.failureMessage ??
+    "",
   ).trim();
 
 // -----------------------------------------------------------------------------
@@ -117,41 +108,41 @@ export default function Dashboard() {
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [toast, setToast] = useState(null);
   const [companies, setCompanies] = useState([]);
- 
-useEffect(() => {
-  let isCurrent = true;
 
-  const loadCompanies = async () => {
-    try {
-      const response = await getCompanies({
-        page: 1,
-        limit: 100,
-      });
+  useEffect(() => {
+    let isCurrent = true;
 
-      if (!isCurrent) return;
+    const loadCompanies = async () => {
+      try {
+        const response = await getCompanies({
+          page: 1,
+          limit: 100,
+        });
 
-      console.log("COMPANIES API RESPONSE:", response);
+        if (!isCurrent) return;
 
-      const items = Array.isArray(response?.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+        console.log("COMPANIES API RESPONSE:", response);
 
-      console.log("COMPANIES LIST:", items);
+        const items = Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response)
+            ? response
+            : [];
 
-      setCompanies(items);
-    } catch (error) {
-      console.error("Failed to load companies:", error);
-    }
-  };
+        console.log("COMPANIES LIST:", items);
 
-  loadCompanies();
+        setCompanies(items);
+      } catch (error) {
+        console.error("Failed to load companies:", error);
+      }
+    };
 
-  return () => {
-    isCurrent = false;
-  };
-}, []);
+    loadCompanies();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
   // Refs keep values available to async callbacks without re-creating handlers.
   const toastId = useRef(0);
   const notifiedCompletedJobId = useRef("");
@@ -251,7 +242,7 @@ useEffect(() => {
       setSummaryStatus(initialStatus);
       setJobStatusMessage(
         initialMessage ||
-          getDefaultStatusMessage(initialStatus),
+        getDefaultStatusMessage(initialStatus),
       );
       setStatusConnectionState(
         TERMINAL_STATUSES.has(initialStatus)
@@ -276,9 +267,9 @@ useEffect(() => {
       notify(
         initialStatus === "COMPLETED" ? "success" : "info",
         initialMessage ||
-          (initialStatus === "COMPLETED"
-            ? "Reconciliation completed successfully."
-            : "Reconciliation submitted. Waiting for processing."),
+        (initialStatus === "COMPLETED"
+          ? "Reconciliation completed successfully."
+          : "Reconciliation submitted. Waiting for processing."),
       );
     },
     [disconnectStatusStream, notify],
@@ -371,21 +362,21 @@ useEffect(() => {
   );
 
   const refreshSummary = useCallback(async () => {
-  const jobId = activeJobIdRef.current;
+    const jobId = activeJobIdRef.current;
 
-  if (!jobId) return;
+    if (!jobId) return;
 
-  try {
-    await loadSummary(jobId);
-  } catch (error) {
-    console.error("Failed to refresh summary:", error);
+    try {
+      await loadSummary(jobId);
+    } catch (error) {
+      console.error("Failed to refresh summary:", error);
 
-    notify(
-      "error",
-      "Settlement successful, but summary refresh failed."
-    );
-  }
-}, [loadSummary, notify]);
+      notify(
+        "error",
+        "Settlement successful, but summary refresh failed."
+      );
+    }
+  }, [loadSummary, notify]);
 
   // ---------------------------------------------------------------------------
   // SSE event handler: update status and react to COMPLETED / FAILED.
@@ -695,114 +686,61 @@ useEffect(() => {
   // ---------------------------------------------------------------------------
   // Dashboard rendering
   // ---------------------------------------------------------------------------
-  const metrics = dashboardSummary
+const metrics = dashboardSummary
     ? getDashboardMetrics(dashboardSummary)
     : {
         summaryData: [],
         reconciliationData: [],
       };
   return (
-    <DashboardLayout>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <>
-              <Header
-                onReconcileClick={() => setIsUploadModalOpen(true)}
-              />
-              {summaryError && (
-                <p className="upload-submit-error" role="alert">
-                  Could not load summary for job {activeJobId}:{" "}
-                  {summaryError}
-                </p>
-              )}
-              <section
-                className="summary-grid"
-                aria-busy={isDashboardLoading}
-              >
-                {isDashboardLoading ? (
-                  <SummarySkeleton />
-                ) : (
-                  metrics.summaryData.map((item) => (
-                    <SummaryCard
-                      key={item.title}
-                      item={item}
-                    />
-                  ))
-                )}
-              </section>
-              <section
-                className="reconciliation-grid"
-                aria-busy={isDashboardLoading}
-              >
-                {isDashboardLoading ? (
-                  <ReconciliationSkeleton />
-                ) : (
-                  metrics.reconciliationData.map((item) => (
-                    <ReconciliationCard
-                      key={item.title}
-                      item={item}
-                    />
-                  ))
-                )}
-              </section>
-              <TransactionTabs
-                companies={companies}
-                jobId={canLoadTransactions ? activeJobId : ""}
-                isWaitingForSummary={
-                  Boolean(activeJobId) && !canLoadTransactions
-                }
-                 onSummaryRefresh={refreshSummary}
-                summaryStatus={summaryStatus}
-                jobStatusMessage={jobStatusMessage}
-                statusConnectionState={statusConnectionState}
-                canRetrySummary={canRetrySummary}
-                retryBlockedMessage={retryBlockedMessage}
-                isRetryingSummary={isRetryingSummary}
-                onRetrySummary={retrySummary}
-                onNotify={notify}
-              />
-              <ReconciliationUploadModal
-                isOpen={isUploadModalOpen}
-                onClose={() => setIsUploadModalOpen(false)}
-                onSubmitted={addHistoryRecord}
-                onNotify={notify}
-              />
-            </>
-          }
-        />
-        <Route
-          path="/companies"
-          element={
-            <CompaniesPage
-              companies={companies}
-              onAddCompany={addCompany}
-            />
-          }
-        />
-        <Route
-          path="/settlements"
-          element={
-            <SettlementsPage
-              companies={companies}
-              onAddCompany={addCompany}
-            />
-          }
-        />
-        <Route
-          path="/history/:jobId"
-          element={
-            <HistoryDetailsPage companies={companies} />
-          }
-        />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="*"
-          element={<Navigate to="/" replace />}
-        />
-      </Routes>
+    <>
+      <Header onReconcileClick={() => setIsUploadModalOpen(true)} />
+      {summaryError && (
+        <p className="upload-submit-error" role="alert">
+          Could not load summary for job {activeJobId}:{" "}
+          {summaryError}
+        </p>
+      )}
+      <section className="summary-grid" aria-busy={isDashboardLoading}>
+        {isDashboardLoading ? (
+          <SummarySkeleton />
+        ) : (
+          metrics.summaryData.map((item) => (
+            <SummaryCard key={item.title} item={item} />
+          ))
+        )}
+      </section>
+      <section className="reconciliation-grid" aria-busy={isDashboardLoading}>
+        {isDashboardLoading ? (
+          <ReconciliationSkeleton />
+        ) : (
+          metrics.reconciliationData.map((item) => (
+            <ReconciliationCard key={item.title} item={item} />
+          ))
+        )}
+      </section>
+      <TransactionTabs
+        companies={companies}
+        jobId={canLoadTransactions ? activeJobId : ""}
+        isWaitingForSummary={
+          Boolean(activeJobId) && !canLoadTransactions
+        }
+        onSummaryRefresh={refreshSummary}
+        summaryStatus={summaryStatus}
+        jobStatusMessage={jobStatusMessage}
+        statusConnectionState={statusConnectionState}
+        canRetrySummary={canRetrySummary}
+        retryBlockedMessage={retryBlockedMessage}
+        isRetryingSummary={isRetryingSummary}
+        onRetrySummary={retrySummary}
+        onNotify={notify}
+      />
+      <ReconciliationUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onSubmitted={addHistoryRecord}
+        onNotify={notify}
+      />
       {toast && (
         <div
           className={`app-toast app-toast-${toast.type}`}
@@ -821,6 +759,6 @@ useEffect(() => {
           </button>
         </div>
       )}
-    </DashboardLayout>
+    </>
   );
 }
