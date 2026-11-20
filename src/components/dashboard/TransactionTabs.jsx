@@ -753,7 +753,8 @@ export default function TransactionTabs({
 useEffect(() => {
   if (
     activeTab !== "all-settlements" &&
-    activeTab !== "reversed-settlements"
+    activeTab !== "reversed-settlements" &&
+    activeTab !== "manual-settlements"
   ) {
     return undefined;
   }
@@ -780,16 +781,33 @@ useEffect(() => {
           ? await fetchAllSettlementsApi(jobId, {
               signal: controller.signal,
             })
-          : await fetchReversedSettlementsApi(jobId, {
-              signal: controller.signal,
-            });
+          : activeTab === "reversed-settlements"
+            ? await fetchReversedSettlementsApi(jobId, {
+                signal: controller.signal,
+              })
+            : await fetchAllSettlementsApi(jobId, {
+                signal: controller.signal,
+              });
 
       if (!Array.isArray(response?.items)) {
         throw new Error("Settlement API must return an items array.");
       }
 
+      const items =
+        activeTab === "reversed-settlements"
+          ? response.items.filter(
+              (item) => String(item.status ?? "").toUpperCase() === "REVERSED"
+            )
+          : activeTab === "manual-settlements"
+            ? response.items.filter(
+                (item) =>
+                  String(item.match_type ?? "").toUpperCase() === "MANUAL" &&
+                  String(item.status ?? "").toUpperCase() === "ACTIVE"
+              )
+            : response.items;
+
       if (isCurrentRequest) {
-        setSettlementHistory(response.items);
+        setSettlementHistory(items);
       }
     } catch (error) {
       if (
@@ -1876,6 +1894,24 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
         </button>
 
+        <button
+
+          type="button"
+
+          className={
+
+            activeTab === "manual-settlements" ? "tab active" : "tab"
+
+          }
+
+          onClick={() => selectSettlementTab("manual-settlements")}
+
+        >
+
+          Manual Settlements
+
+        </button>
+
       </div>
 
       {activeTab === "transactions" ? (
@@ -2184,7 +2220,19 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                 ? "All Settlements"
 
-                : "Reversed Settlements"}
+                : activeTab === "reversed-settlements"
+
+                  ? "Reversed Settlements"
+
+                  : (
+
+                    activeTab === "manual-settlements" && settlementHistory.length > 0
+
+                      ? `Manual Settlements (${settlementHistory.length})`
+
+                      : "Manual Settlements"
+
+                  )}
 
             </span>
 
@@ -2248,7 +2296,8 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                     <th>Status</th>
 
-                    {activeTab === "all-settlements" && <th>Action</th>}
+                    {(activeTab === "all-settlements" ||
+                    activeTab === "manual-settlements") && <th>Action</th>}
 
                   </tr>
 
@@ -2306,7 +2355,8 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                       <td>{record.status || "—"}</td>
 
-                      {activeTab === "all-settlements" && (
+                      {(activeTab === "all-settlements" ||
+                      activeTab === "manual-settlements") && (
                         <td>
                           {String(record.status ?? "").toUpperCase() === "ACTIVE" && (
                             <button
