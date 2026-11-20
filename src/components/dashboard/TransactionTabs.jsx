@@ -233,7 +233,11 @@ function matchesTransactionSearch(transaction, query) {
 
 const SETTLEMENTS_PAGE_LIMIT = 100;
 
-async function fetchAllSettlementsApi(jobId,{ signal } = {}) {
+async function fetchAllSettlementsApi(jobId, { signal } = {}) {
+  if (typeof jobId !== "string" || !jobId.trim()) {
+    throw new Error("Valid Job ID is required.");
+  }
+
   const firstPage = await settlements({
     jobId,
     page: 1,
@@ -254,6 +258,7 @@ async function fetchAllSettlementsApi(jobId,{ signal } = {}) {
     }
 
     const response = await settlements({
+      jobId, // Missing tha
       page,
       limit: SETTLEMENTS_PAGE_LIMIT,
       signal,
@@ -266,16 +271,20 @@ async function fetchAllSettlementsApi(jobId,{ signal } = {}) {
     allItems.push(...response.items);
   }
 
-  return { ...firstPage, items: allItems };
+  return {
+    ...firstPage,
+    items: allItems,
+  };
 }
 
-async function fetchReversedSettlementsApi(jobId,{ signal } = {}) {
-  const response = await fetchAllSettlementsApi({ signal });
+async function fetchReversedSettlementsApi(jobId, { signal } = {}) {
+  const response = await fetchAllSettlementsApi(jobId, { signal });
 
   return {
     ...response,
     items: response.items.filter(
-      (item) => String(item.status ?? "").toUpperCase() === "REVERSED",
+      (item) =>
+        String(item.status ?? "").toUpperCase() === "REVERSED"
     ),
   };
 }

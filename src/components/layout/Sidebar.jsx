@@ -104,7 +104,7 @@ export default function Sidebar({ isOpen, onToggle }) {
           {isOpen && <span>Companies</span>}
         </NavLink>
 
-        <NavLink
+        {/* <NavLink
           to="/settlements"
           className={({ isActive }) =>
             isActive ? "nav-item active" : "nav-item"
@@ -114,7 +114,7 @@ export default function Sidebar({ isOpen, onToggle }) {
         >
           <HandCoins size={19} />
           {isOpen && <span>Settlements</span>}
-        </NavLink>
+        </NavLink> */}
 
         <NavLink
           to="/history"

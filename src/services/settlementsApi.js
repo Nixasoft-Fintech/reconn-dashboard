@@ -1,4 +1,6 @@
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
 async function readResponse(response) {
   if (response.status === 204) return { success: true };
 
@@ -41,10 +43,11 @@ export async function settlements({
     limit: String(limit),
   });
 
-  const url = `/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
+  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
 
   const response = await fetch(url, {
     method: "GET",
+    credentials: "include",
     headers: {
       Accept: "application/json",
     },
@@ -60,10 +63,11 @@ export async function reverseSettlement(settlementId) {
     throw new Error("Settlement ID is required.");
   }
 
-  const url = `/api/reconciliation/manual-settlements/${encodeURIComponent(settlementId)}/reverse`;
+  const url = `${apiBaseUrl}/api/reconciliation/manual-settlements/${encodeURIComponent(settlementId)}/reverse`;
 
   const response = await fetch(url, {
     method: "POST",
+    credentials: "include",
     headers: {
       Accept: "application/json",
     },

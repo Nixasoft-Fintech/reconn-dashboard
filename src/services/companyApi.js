@@ -47,6 +47,7 @@ async function readResponse(response) {
  *   }>
  * }>}
  */
+
 export async function getCompanies({ page = 1, limit = 100, signal } = {}) {
   const params = new URLSearchParams({
     page: String(page),
@@ -57,6 +58,7 @@ export async function getCompanies({ page = 1, limit = 100, signal } = {}) {
 
   const response = await fetch(url, {
     method: "GET",
+    credentials: "include",
     headers: {
       Accept: "application/json",
     },
@@ -87,6 +89,7 @@ export async function createCompany({ name, alias }, { signal } = {}) {
 
   const response = await fetch(url, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
