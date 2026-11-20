@@ -29,10 +29,25 @@ export default function ReconciliationCard({ item }) {
       type: "unmatched",
     },
   ];
-
+  const hasExcluded = item.excludedCount != null;
+  const excludedIsPositive = hasExcluded && Number(item.excludedCount) > 0;
   return (
     <section className="source-reconciliation">
-      <h3>{item.title}</h3>
+      <h3>
+        {item.title}
+        {hasExcluded && (
+          <span
+            style={{
+              marginLeft: "0.5rem",
+              color: excludedIsPositive ? "#dc2626" : "#111827",
+              fontWeight: 600,
+            }}
+          >
+            (Excluded: {Number(item.excludedCount).toLocaleString("en-IN")} /{" "}
+            {formatCurrency(item.excludedValue)})
+          </span>
+        )}
+      </h3>
 
       <div className="reconciliation-metrics">
         {metrics.map((metric) => (

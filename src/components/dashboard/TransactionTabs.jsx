@@ -529,7 +529,11 @@ export default function TransactionTabs({
 
             ? "MATCHED"
 
-            : "NOT_FOUND";
+            : selectedStatus === "Excluded"
+
+              ? "EXCLUDED"
+
+              : "NOT_FOUND";
 
         const getTransactions =
 
@@ -550,7 +554,7 @@ export default function TransactionTabs({
           page: currentPage,
 
           limit: pageSize,
-
+          search: debouncedSearch,
           signal: controller.signal,
 
         });
@@ -720,6 +724,8 @@ export default function TransactionTabs({
     selectedSource,
 
     selectedStatus,
+
+    debouncedSearch,
 
     onNotify,
 

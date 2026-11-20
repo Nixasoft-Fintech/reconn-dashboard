@@ -71,18 +71,7 @@ export default function Sidebar({ isOpen, onToggle }) {
       </div>
 
       <nav className="sidebar-nav">
-        <NavLink
-          to="/login"
-          className={({ isActive }) =>
-            isActive ? "nav-item active" : "nav-item"
-          }
-          aria-label={isOpen ? undefined : "Login"}
-          title={isOpen ? undefined : "Login"}
-        >
-          <LogIn size={19} />
-          {isOpen && <span>Login</span>}
-        </NavLink>
-
+       
         <NavLink
           to="/"
           end

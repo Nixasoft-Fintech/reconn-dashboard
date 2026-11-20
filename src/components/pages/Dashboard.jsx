@@ -145,7 +145,9 @@ export default function Dashboard() {
   }, []);
   // Refs keep values available to async callbacks without re-creating handlers.
   const toastId = useRef(0);
-  const notifiedCompletedJobId = useRef("");
+  const notifiedCompletedJobId = useRef(
+  window.localStorage.getItem(ACTIVE_JOB_ID_KEY) ?? "",
+);
   const eventSourceRef = useRef(null);
   const activeJobIdRef = useRef(activeJobId);
   const reconnectTimerRef = useRef(null);

@@ -28,8 +28,6 @@ export default function PublicRoute({ children }) {
 
         setAuthStatus(response.ok ? "authenticated" : "unauthenticated");
       } catch (error) {
-        console.error("Session verification failed:", error);
-
         if (isMounted) {
           setAuthStatus("unauthenticated");
         }

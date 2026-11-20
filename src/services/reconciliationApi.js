@@ -601,6 +601,7 @@ export async function getFundRequests(
     status = "NOT_FOUND",
     page = 1,
     limit = 100,
+    search = "",
     signal,
   } = {}
 ) {
@@ -609,6 +610,7 @@ export async function getFundRequests(
     page: String(page),
     limit: String(limit),
   });
+  if (search) params.set("search", search);
 
   const url =
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/fund-requests?${params}`;
@@ -630,6 +632,7 @@ export async function getVaTransactions(
     status = "NOT_FOUND",
     page = 1,
     limit = 100,
+    search = "",
     signal,
   } = {}
 ) {
@@ -638,6 +641,7 @@ export async function getVaTransactions(
     page: String(page),
     limit: String(limit),
   });
+  if (search) params.set("search", search);
 
   const url =
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/va-transactions?${params}`;
@@ -659,6 +663,7 @@ export async function getBankTransactions(
     status = "NOT_FOUND",
     page = 1,
     limit = 100,
+    search = "",
     signal,
   } = {}
 ) {
@@ -667,6 +672,7 @@ export async function getBankTransactions(
     page: String(page),
     limit: String(limit),
   });
+  if (search) params.set("search", search);
 
   const url =
     `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/bank-transactions?${params}`;
