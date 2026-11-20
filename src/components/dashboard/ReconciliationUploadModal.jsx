@@ -285,9 +285,6 @@ export default function ReconciliationUploadModal({
   };
 
   const handleClose = () => {
-    setVaFiles([]);
-    setFundFiles([]);
-    setStatementFiles([]);
     setSubmitError("");
     setResult(null);
     setIsAwaitingResult(false);

@@ -782,6 +782,14 @@ export async function exportTransactionsCsv(
 // COMPANY MANAGEMENT
 // ============================================================
 
+export async function deleteBankTransaction(jobId, bankTransactionId) {
+  const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+  const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/bank-transactions/${encodeURIComponent(bankTransactionId)}`;
+  const response = await fetch(url, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw new Error("Delete failed");
+  return response.json().catch(() => ({}));
+}
+
 export { getCompanies, createCompany } from "./companyApi";
 
 // ============================================================

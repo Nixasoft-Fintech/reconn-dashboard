@@ -1,23 +1,23 @@
+
 /**
  * Maps an incoming reconciliation status into the visual tone used by the UI.
- * Negative or failed states are highlighted as danger; successful states use success.
  */
 function getStatusTone(value) {
   const status = String(value).toLowerCase();
 
-  // Treat the most common failure signals as an error state.
   if (/unmatch|mismatch|not_found|fail|error|invalid|duplicate/.test(status)) {
     return "danger";
-  }
-
-  // Positive match states receive a green success treatment.
-  if (/match|success|approved|pass/.test(status)) {
-    return "success";
   }
 
   if (/not_used/.test(status)) {
     return "warning";
   }
+
+  if (/match|success|approved|pass/.test(status)) {
+    return "success";
+  }
+
+  return "warning";
 }
 
 /**
@@ -35,9 +35,10 @@ function StatusCell({ value }) {
   );
 }
 
+
+
 /**
- * Displays the full reconciliation view for a set of transactions, including
- * fund request data, ACSMT statement data, validation checks, and settlement actions.
+ * Displays the full reconciliation view for a set of transactions.
  */
 export default function TransactionTable({
   id,
@@ -46,6 +47,8 @@ export default function TransactionTable({
   emptyMessage = "No transaction found",
   isSettlementDisabled = false,
   onSettle,
+  onDelete,
+  jobId,
 }) {
   return (
     <div className="table-wrapper">
@@ -55,7 +58,6 @@ export default function TransactionTable({
         aria-busy={isLoading}
       >
         <thead>
-          {/* Top-level grouping labels divide the table into its major sections. */}
           <tr>
             <th className="transaction-group-header" colSpan={10}>
               Source Transaction Details
@@ -67,11 +69,10 @@ export default function TransactionTable({
               Match Checks
             </th>
             <th className="transaction-group-header" colSpan={1}>
-              Settlement
+              Action
             </th>
           </tr>
 
-          {/* Column names remain static for the reconciliation comparison. */}
           <tr>
             <th>Transaction ID</th>
             <th>Row Number</th>
@@ -97,7 +98,7 @@ export default function TransactionTable({
             <th>Date Status</th>
             <th>Final Status</th>
             <th>Remark</th>
-            <th>Settle With</th>
+            <th>Action</th>
           </tr>
         </thead>
 
@@ -123,67 +124,90 @@ export default function TransactionTable({
               </td>
             </tr>
           ) : (
-            // Each transaction row contains both the source record and the matching ACSMT data.
-            transactions.map((transaction,index) => (
-              <tr key={transaction.source_transaction_id || index}>
-              {/* {console.log("Rendering transaction:", transaction.source_transaction_id)} */}
-                <td className="transaction-id">{transaction.txnId ?? transaction.id ?? "—"}</td>
-                <td>{transaction.rowNumber ?? "—"}</td>
-                <td>{transaction.refNum ?? "—"}</td>
-                <td className="transaction-amount">{transaction.fundReqAmount ?? transaction.amount ?? "—"}</td>
-                <td>{transaction.user ?? "—"}</td>
-                <td>{transaction.requestDate ?? transaction.date ?? "—"}</td>
-                <td>{transaction.requestStatus ?? "—"}</td>
-                <td>{transaction.sourceBank ?? "—"}</td>
-                <td>{transaction.paymentMode ?? "—"}</td>
-                <td>{transaction.virtualAccountNumber ?? "—"}</td>
-                <td>{transaction.accountRow ?? "—"}</td>
-                <td>{transaction.accountBank ?? "—"}</td>
-                <td>{transaction.accountUtr ?? "—"}</td>
-                <td>{transaction.accountRefNumber ?? "—"}</td>
-                <td>{transaction.accountAmount ?? "—"}</td>
-                <td>{transaction.accountUser ?? "—"}</td>
-                <td>{transaction.accountDate ?? "—"}</td>
-                <td>{transaction.accountNarration ?? "—"}</td>
-                <td>
-                  <StatusCell value={transaction.referenceStatus} />
-                </td>
-                <td>
-                  <StatusCell value={transaction.amountStatus} />
-                </td>
-                <td>
-                  <StatusCell value={transaction.userStatus} />
-                </td>
-                <td>
-                  <StatusCell value={transaction.dateStatus} />
-                </td>
-                <td>
-                  <StatusCell value={transaction.finalStatus ?? transaction.status} />
-                </td>
-                <td>{transaction.remark ?? "—"}</td>
-                <td>
-                  {(transaction.finalStatus ?? transaction.status) ===
-                    "Unmatched" ||
-                  transaction.finalStatus === "NOT_FOUND" ? (
-                    <button
-                      className="settle-button"
-                      type="button"
-                      disabled={isSettlementDisabled}
-                      title={
-                        isSettlementDisabled
-                          ? "Manual settlement is only supported for Fund Request and VA Transfer."
-                          : undefined
-                      }
-                      onClick={() => onSettle?.(transaction)}
-                    >
-                      Settle
-                    </button>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            ))
+            transactions.map((transaction, index) => {
+              const finalStatus =
+                transaction.finalStatus ?? transaction.status;
+
+              const isUnmatched =
+                String(finalStatus).toLowerCase() === "unmatched" ||
+                String(finalStatus).toUpperCase() === "NOT_FOUND";
+
+              return (
+                <tr
+                  key={transaction.source_transaction_id || index}
+                >
+                  <td className="transaction-id">
+                    {transaction.txnId ?? transaction.id ?? "—"}
+                  </td>
+                  <td>{transaction.rowNumber ?? "—"}</td>
+                  <td>{transaction.refNum ?? "—"}</td>
+                  <td className="transaction-amount">
+                    {transaction.fundReqAmount ?? transaction.amount ?? "—"}
+                  </td>
+                  <td>{transaction.user ?? "—"}</td>
+                  <td>{transaction.requestDate ?? transaction.date ?? "—"}</td>
+                  <td>{transaction.requestStatus ?? "—"}</td>
+                  <td>{transaction.sourceBank ?? "—"}</td>
+                  <td>{transaction.paymentMode ?? "—"}</td>
+                  <td>{transaction.virtualAccountNumber ?? "—"}</td>
+                  <td>{transaction.accountRow ?? "—"}</td>
+                  <td>{transaction.accountBank ?? "—"}</td>
+                  <td>{transaction.accountUtr ?? "—"}</td>
+                  <td>{transaction.accountRefNumber ?? "—"}</td>
+                  <td>{transaction.accountAmount ?? "—"}</td>
+                  <td>{transaction.accountUser ?? "—"}</td>
+                  <td>{transaction.accountDate ?? "—"}</td>
+                  <td>{transaction.accountNarration ?? "—"}</td>
+
+                  <td>
+                    <StatusCell value={transaction.referenceStatus} />
+                  </td>
+                  <td>
+                    <StatusCell value={transaction.amountStatus} />
+                  </td>
+                  <td>
+                    <StatusCell value={transaction.userStatus} />
+                  </td>
+                  <td>
+                    <StatusCell value={transaction.dateStatus} />
+                  </td>
+                  <td>
+                    <StatusCell value={finalStatus} />
+                  </td>
+                  <td>{transaction.remark ?? "—"}</td>
+
+                  <td>
+                    {isUnmatched ? (
+                      isSettlementDisabled ? (
+                        <button
+                          className="delete-button"
+                          type="button"
+                          onClick={() => onDelete?.(jobId, transaction.bankTransactionId)}
+                          disabled={!onDelete}
+                          title={
+                            !onDelete
+                              ? "Delete action is not configured."
+                              : "Delete unmatched bank statement record"
+                          }
+                        >
+                          Delete
+                        </button>
+                      ) : (
+                        <button
+                          className="settle-button"
+                          type="button"
+                          onClick={() => onSettle?.(transaction)}
+                        >
+                          Settle
+                        </button>
+                      )
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

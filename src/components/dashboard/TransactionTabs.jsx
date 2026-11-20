@@ -9,6 +9,8 @@ import {
 
   createManualSettlement,
 
+  deleteBankTransaction,
+
   exportTransactionsCsv,
 
   getBankTransactions,
@@ -830,6 +832,7 @@ useEffect(() => {
       await reverseSettlement(settlementId);
       onNotify?.("success", `Settlement ${settlementId} reversed successfully.`);
       setReloadTrigger((value) => value + 1);
+      await onSummaryRefresh?.();
     } catch (error) {
       const message = error instanceof Error
         ? error.message
@@ -1149,6 +1152,43 @@ useEffect(() => {
     }
 
   };
+  
+const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
+  console.log("M",jobId, bankTransactionId);
+  if (!jobId || !bankTransactionId) {
+    alert("Job ID or Bank Transaction ID is missing.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Are you sure you want to delete bank transaction ${bankTransactionId}?`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await deleteBankTransaction(jobId, bankTransactionId);
+
+    setTransactionPage((prev) => ({
+      ...prev,
+      items: prev.items.filter(
+        (t) =>
+          String(t.bankTransactionId) !== String(bankTransactionId) &&
+          String(t.sourceTransactionId) !== String(bankTransactionId)
+      ),
+    }));
+
+    onNotify?.(
+      "success",
+      `Bank transaction ${bankTransactionId} deleted successfully.`
+    );
+    setReloadTrigger((v) => v + 1);
+    await onSummaryRefresh?.();
+  } catch (error) {
+    console.error("Delete failed:", error);
+    alert("Failed to delete bank transaction.");
+  }
+};
 
   const handleConfirmSettlement = async (event) => {
 
@@ -1987,6 +2027,8 @@ useEffect(() => {
         isSettlementDisabled={selectedSource === "Account Statement"}
 
         onSettle={handleSettle}
+        onDelete={handleDeleteBankTransaction}
+        jobId={jobId}
 
       />
 
