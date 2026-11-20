@@ -369,6 +369,8 @@ export default function Dashboard() {
     if (!jobId) return;
 
     try {
+      initialSummaryRequestRef.current = { jobId: "", promise: null };
+      finalSummaryRequestRef.current = { jobId: "", promise: null };
       await loadSummary(jobId);
     } catch (error) {
       console.error("Failed to refresh summary:", error);

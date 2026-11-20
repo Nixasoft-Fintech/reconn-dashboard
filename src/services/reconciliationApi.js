@@ -42,7 +42,7 @@ async function refreshAccessToken() {
   if (refreshPromise) {
     return refreshPromise;
   }
-
+console.log("Refreshing access token...");
   refreshPromise = (async () => {
     try {
       const response = await fetch(

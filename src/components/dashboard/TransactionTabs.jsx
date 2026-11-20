@@ -836,6 +836,14 @@ useEffect(() => {
 }, [activeTab, jobId, reloadTrigger]);
 
 
+  // Backup: refresh summary whenever transactions are reloaded
+  // (e.g., after bank transaction deletion or settlement reversal)
+  useEffect(() => {
+    if (reloadTrigger > 0 && jobId && onSummaryRefresh) {
+      onSummaryRefresh();
+    }
+  }, [reloadTrigger, jobId, onSummaryRefresh]);
+
   const handleReverseSettlement = async (record) => {
     const settlementId = record?.settlement_id;
     if (!settlementId || reversingSettlementId) return;
@@ -1201,10 +1209,16 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
       `Bank transaction ${bankTransactionId} deleted successfully.`
     );
     setReloadTrigger((v) => v + 1);
-    await onSummaryRefresh?.();
   } catch (error) {
     console.error("Delete failed:", error);
     alert("Failed to delete bank transaction.");
+    return;
+  }
+
+  try {
+    await onSummaryRefresh?.();
+  } catch (error) {
+    console.error("Summary refresh failed:", error);
   }
 };
 
