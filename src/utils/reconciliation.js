@@ -89,10 +89,14 @@ export function getDashboardMetrics(summary) {
         unmatchedValue: toNumber(fundRequest.unmatched_amount),
         excludedCount: fundRequest.excluded_records != null
           ? toNumber(fundRequest.excluded_records)
-          : null,
+          : fundRequest.other_records != null
+            ? toNumber(fundRequest.other_records)
+            : null,
         excludedValue: fundRequest.excluded_amount != null
           ? toNumber(fundRequest.excluded_amount)
-          : null,
+          : fundRequest.other_amount != null
+            ? toNumber(fundRequest.other_amount)
+            : null,
       },
       {
         title: "VA Transfer",
@@ -107,10 +111,14 @@ export function getDashboardMetrics(summary) {
         unmatchedValue: toNumber(vaTransaction.unmatched_amount),
         excludedCount: vaTransaction.excluded_records != null
           ? toNumber(vaTransaction.excluded_records)
-          : 0,
+          : vaTransaction.other_records != null
+            ? toNumber(vaTransaction.other_records)
+            : 0,
         excludedValue: vaTransaction.excluded_amount != null
           ? toNumber(vaTransaction.excluded_amount)
-          : 0,
+          : vaTransaction.other_amount != null
+            ? toNumber(vaTransaction.other_amount)
+            : 0,
       },
       {
         title: "Account Statement",

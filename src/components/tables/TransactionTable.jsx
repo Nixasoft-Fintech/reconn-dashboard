@@ -15,8 +15,9 @@ function getStatusTone(value) {
     return "success";
   }
 
-  // Any unknown or neutral state stays visually subdued.
-  return "neutral";
+  if (/not_used/.test(status)) {
+    return "warning";
+  }
 }
 
 /**

@@ -37,10 +37,18 @@ function getStatusClass(status) {
 function SourceSummary({ title, summary = {} }) {
   const metrics = [
     ["Total records", summary.total_records],
+    ["Total amount", summary.total_amount],
     ["Matched", summary.matched_records],
+    ["Matched amount", summary.matched_amount],
     ["Unmatched", summary.not_found_records],
-    ["Rejected", summary.other_records],
+    ["Unmatched amount", summary.not_found_amount],
   ];
+  if (title === "Fund request") {
+    metrics.push(
+      ["Rejected", summary.other_records],
+      ["Rejected amount", summary.other_amount],
+    );
+  }
 
   return (
     <article className="history-detail-card">

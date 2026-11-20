@@ -1671,6 +1671,18 @@ useEffect(() => {
           Fund Request Unmatched
 
         </button>
+        <button
+          className={
+            activeTab === "transactions" &&
+            selectedSource === "Fund Request" &&
+            selectedStatus === "Rejected"
+              ? "tab active"
+              : "tab"
+          }
+          onClick={() => selectTab("Fund Request", "Rejected")}
+        >
+          Fund Request Rejected
+        </button>
 
         <button
 
@@ -1802,31 +1814,9 @@ useEffect(() => {
 
         </button>
 
-        <button
-          className={
-            activeTab === "transactions" &&
-            selectedSource === "Fund Request" &&
-            selectedStatus === "Rejected"
-              ? "tab active"
-              : "tab"
-          }
-          onClick={() => selectTab("Fund Request", "Rejected")}
-        >
-          Fund Request Rejected
-        </button>
+        
 
-        <button
-          className={
-            activeTab === "transactions" &&
-            selectedSource === "VA Transfer" &&
-            selectedStatus === "Rejected"
-              ? "tab active"
-              : "tab"
-          }
-          onClick={() => selectTab("VA Transfer", "Rejected")}
-        >
-          VA Transfer Rejected
-        </button>
+       
 
         <button
 
