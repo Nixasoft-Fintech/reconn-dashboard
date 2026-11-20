@@ -68,6 +68,8 @@ export async function getCompanies({ page = 1, limit = 100, signal } = {}) {
   return readResponse(response);
 }
 
+
+
 /**
  * Create a new company.
  *
@@ -84,6 +86,7 @@ export async function getCompanies({ page = 1, limit = 100, signal } = {}) {
  *   updated_at: string
  * }>}
  */
+
 export async function createCompany({ name, alias }, { signal } = {}) {
   const url = `${apiBaseUrl}/api/companies`;
 
@@ -96,6 +99,42 @@ export async function createCompany({ name, alias }, { signal } = {}) {
     },
     body: JSON.stringify({ name, alias }),
     signal,
+  });
+
+  return readResponse(response);
+}
+
+
+export async function deletecompany({ companyId }, { signal } = {}) {
+  if (!companyId) {
+    throw new Error("Company ID is required.");
+  }
+
+  const url = `${apiBaseUrl}/api/companies/${encodeURIComponent(companyId)}`;
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+    signal,
+  });
+
+  return readResponse(response);
+}
+
+export async function updateCompany({ companyId, name, alias }) {
+  const url = `${apiBaseUrl}/api/companies/${encodeURIComponent(companyId)}`;
+
+  const response = await fetch(url, {
+    method: "PUT",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ name, alias }),
   });
 
   return readResponse(response);
