@@ -39,7 +39,7 @@ function SourceSummary({ title, summary = {} }) {
     ["Total records", summary.total_records],
     ["Matched", summary.matched_records],
     ["Unmatched", summary.not_found_records],
-    ["Other", summary.other_records],
+    ["Rejected", summary.other_records],
   ];
 
   return (
