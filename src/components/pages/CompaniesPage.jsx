@@ -8,6 +8,8 @@ import {
 } from "../../services/companyApi";
 import "../../index.css";
 
+const PAGE_SIZE_OPTIONS = [100];
+
 export default function CompaniesPage({ onNotify, onAddCompany }) {
   // Add form state
   const [name, setName] = useState("");
@@ -20,6 +22,11 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [fetchVersion, setFetchVersion] = useState(0);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(null); // backend total na de to null rahega
 
   // Edit state
   const [editCompany, setEditCompany] = useState(null);
@@ -55,35 +62,51 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
     return () => window.clearTimeout(timeoutId);
   }, [localToast]);
 
-  // Companies fetch function (useEffect + delete + edit sab yahi use karte hain)
-  const fetchCompanies = useCallback(async (signal) => {
-    try {
-      const response = await getCompanies({
-        page: 1,
-        limit: 100,
-        signal,
-      });
+  // Companies fetch (current page + limit ke hisaab se)
+  const fetchCompanies = useCallback(
+    async (signal) => {
+      try {
+        const response = await getCompanies({ page, limit, signal });
 
-      const items = Array.isArray(response?.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+        const items = Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response)
+            ? response
+            : [];
 
-      setCompanies(items);
-      setFetchError("");
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
+        // Page khaali aaya (jaise last page ka last item delete hua) -> pichle page par jao
+        if (items.length === 0 && page > 1) {
+          setPage((p) => Math.max(1, p - 1));
+          return;
+        }
 
-      setFetchError(
-        err instanceof Error ? err.message : "Unable to load companies."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+        const rawTotal =
+          response?.total ??
+          response?.totalCount ??
+          response?.total_count ??
+          response?.pagination?.total ??
+          null;
+        const parsedTotal = Number(rawTotal);
 
-  // Initial load + retry/add ke baad reload
+        setCompanies(items);
+        setTotal(
+          rawTotal !== null && Number.isFinite(parsedTotal) ? parsedTotal : null
+        );
+        setFetchError("");
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+
+        setFetchError(
+          err instanceof Error ? err.message : "Unable to load companies."
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [page, limit]
+  );
+
+  // Initial load + page/limit change + retry/add ke baad reload
   useEffect(() => {
     const controller = new AbortController();
 
@@ -91,6 +114,28 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
 
     return () => controller.abort();
   }, [fetchCompanies, fetchVersion]);
+
+  // Pagination helpers
+  const totalPages =
+    total !== null ? Math.max(1, Math.ceil(total / limit)) : null;
+  const hasPrev = page > 1;
+  const hasNext =
+    totalPages !== null ? page < totalPages : companies.length === limit;
+
+  const rangeStart = companies.length === 0 ? 0 : (page - 1) * limit + 1;
+  const rangeEnd = (page - 1) * limit + companies.length;
+
+  const goToPage = (nextPage) => {
+    if (nextPage === page || nextPage < 1) return;
+    setIsLoading(true);
+    setPage(nextPage);
+  };
+
+  const handleLimitChange = (event) => {
+    setIsLoading(true);
+    setLimit(Number(event.target.value));
+    setPage(1);
+  };
 
   // Retry loading companies
   const handleRetry = useCallback(() => {
@@ -118,7 +163,7 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
 
       notify("success", `Company "${company.name}" deleted successfully.`);
 
-      // List refresh
+      // Current page refresh (khaali ho gaya to fetchCompanies pichle page par le jayega)
       await fetchCompanies();
     } catch (error) {
       console.error("Delete company failed:", error);
@@ -232,9 +277,10 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
         onAddCompany(createdCompany);
       }
 
-      // Refresh company listing
+      // Refresh listing (page 1 par wapas)
       setIsLoading(true);
       setFetchError("");
+      setPage(1);
       setFetchVersion((v) => v + 1);
     } catch (err) {
       const message =
@@ -446,6 +492,70 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {!fetchError && (companies.length > 0 || page > 1) && (
+          <nav
+            aria-label="Companies pagination"
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              padding: "14px 4px 4px",
+            }}
+          >
+            <span style={{ color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+              {total !== null
+                ? `Showing ${rangeStart}-${rangeEnd} of ${total}`
+                : `Page ${page}`}
+            </span>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <label
+                htmlFor="companies-page-size"
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                Rows
+                <select
+                  id="companies-page-size"
+                  value={limit}
+                  onChange={handleLimitChange}
+                  disabled={isLoading}
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                className="reconcile-button"
+                type="button"
+                onClick={() => goToPage(page - 1)}
+                disabled={!hasPrev || isLoading}
+              >
+                Previous
+              </button>
+
+              <span aria-live="polite">
+                {totalPages !== null ? `Page ${page} of ${totalPages}` : `Page ${page}`}
+              </span>
+
+              <button
+                className="reconcile-button"
+                type="button"
+                onClick={() => goToPage(page + 1)}
+                disabled={!hasNext || isLoading}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
+        )}
       </div>
 
       {/* Standalone toast when onNotify is not passed */}
@@ -468,99 +578,84 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
       )}
 
       {/* Edit Company Modal */}
-      {showEditModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-company-title"
-          onClick={closeEditModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
+      {/* Edit Company Modal */}
+{showEditModal && (
+  <div
+    className="modal-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="edit-company-title"
+    onClick={closeEditModal}
+  >
+    <form
+      className="modal-card"
+      onSubmit={handleUpdateCompany}
+      onClick={(e) => e.stopPropagation()}
+      noValidate
+    >
+      <h2 className="modal-title" id="edit-company-title">
+        Edit Company
+      </h2>
+      <p className="modal-subtitle">
+        Update the company name or nickname.
+      </p>
+
+      <label className="modal-field" htmlFor="edit-company-name">
+        Company Name
+        <input
+          id="edit-company-name"
+          type="text"
+          value={editName}
+          disabled={isUpdating}
+          autoFocus
+          onChange={(e) => {
+            setEditName(e.target.value);
+            if (editError) setEditError("");
           }}
-        >
-          <form
-            onSubmit={handleUpdateCompany}
-            onClick={(e) => e.stopPropagation()}
-            noValidate
-            style={{
-              background: "#fff",
-              borderRadius: "12px",
-              padding: "24px",
-              width: "100%",
-              maxWidth: "420px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "14px",
-            }}
-          >
-            <h2 id="edit-company-title" style={{ margin: 0 }}>
-              Edit Company
-            </h2>
+        />
+      </label>
 
-            <label htmlFor="edit-company-name">
-              Company Name
-              <input
-                id="edit-company-name"
-                type="text"
-                value={editName}
-                disabled={isUpdating}
-                autoFocus
-                onChange={(e) => {
-                  setEditName(e.target.value);
-                  if (editError) setEditError("");
-                }}
-              />
-            </label>
+      <label className="modal-field" htmlFor="edit-company-alias">
+        Company Nickname
+        <input
+          id="edit-company-alias"
+          type="text"
+          value={editAlias}
+          disabled={isUpdating}
+          onChange={(e) => {
+            setEditAlias(e.target.value);
+            if (editError) setEditError("");
+          }}
+        />
+      </label>
 
-            <label htmlFor="edit-company-alias">
-              Company Nickname
-              <input
-                id="edit-company-alias"
-                type="text"
-                value={editAlias}
-                disabled={isUpdating}
-                onChange={(e) => {
-                  setEditAlias(e.target.value);
-                  if (editError) setEditError("");
-                }}
-              />
-            </label>
-
-            {editError && (
-              <p className="company-form-error" role="alert">
-                {editError}
-              </p>
-            )}
-
-            <div
-              style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}
-            >
-              <button
-                className="reconcile-button"
-                type="button"
-                onClick={closeEditModal}
-                disabled={isUpdating}
-              >
-                Cancel
-              </button>
-
-              <button
-                className="upload-modal-submit"
-                type="submit"
-                disabled={isUpdating}
-              >
-                {isUpdating ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
-          </form>
-        </div>
+      {editError && (
+        <p className="company-form-error" role="alert">
+          {editError}
+        </p>
       )}
+
+      <div className="modal-actions">
+        <button
+          className="reconcile-button"
+          type="button"
+          onClick={closeEditModal}
+          disabled={isUpdating}
+        >
+          Cancel
+        </button>
+
+        <button
+          className="upload-modal-submit"
+          type="submit"
+          disabled={isUpdating}
+        >
+          {isUpdating ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+    </form>
+  </div>
+)}
     </section>
   );
 }
