@@ -4,20 +4,24 @@ import {
   History,
   LayoutDashboard,
   Menu,
-  HandCoins,
   X,
   LogIn,
   LogOut,
 } from "lucide-react";
 
 import { NavLink, useNavigate } from "react-router-dom";
+import { stopAuthInterceptor } from "../../services/reconciliationApi";
+const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export default function Sidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
+    // Stop interceptor before making logout request.
+    stopAuthInterceptor();
+
     try {
-      await fetch("/api/auth/logout", {
+      await fetch(`${apiBaseUrl}/api/auth/logout`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -103,18 +107,6 @@ export default function Sidebar({ isOpen, onToggle }) {
           <Building2 size={19} />
           {isOpen && <span>Companies</span>}
         </NavLink>
-
-        {/* <NavLink
-          to="/settlements"
-          className={({ isActive }) =>
-            isActive ? "nav-item active" : "nav-item"
-          }
-          aria-label={isOpen ? undefined : "Settlements"}
-          title={isOpen ? undefined : "Settlements"}
-        >
-          <HandCoins size={19} />
-          {isOpen && <span>Settlements</span>}
-        </NavLink> */}
 
         <NavLink
           to="/history"

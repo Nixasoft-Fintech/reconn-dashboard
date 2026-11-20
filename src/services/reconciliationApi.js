@@ -20,11 +20,25 @@ let streamCounter = 0;
 // AUTH TOKEN REFRESH INTERCEPTOR
 // ============================================================
 
-// Prevent multiple refresh requests at the same time.
 let refreshPromise = null;
+let isLoggedOut = false;
+
+// Disable interceptor immediately on logout.
+export function stopAuthInterceptor() {
+  isLoggedOut = true;
+}
+
+// Enable interceptor after successful login.
+export function startAuthInterceptor() {
+  isLoggedOut = false;
+}
 
 async function refreshAccessToken() {
-  // Reuse an ongoing refresh request.
+  // Never call refresh API after logout.
+  if (isLoggedOut) {
+    return false;
+  }
+
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -43,8 +57,7 @@ async function refreshAccessToken() {
       );
 
       return response.ok;
-    } catch (error) {
-      console.error("Token refresh failed:", error);
+    } catch {
       return false;
     }
   })();
@@ -57,10 +70,15 @@ async function refreshAccessToken() {
 }
 
 function redirectToLogin() {
+  if (isLoggedOut) {
+    return;
+  }
+
   if (window.location.pathname !== "/login") {
     window.location.replace("/login");
   }
 }
+
 
 
 // ============================================================

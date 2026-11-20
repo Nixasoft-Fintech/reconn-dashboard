@@ -1,6 +1,7 @@
 
 import { useState } from "react";
 import "./Login.css";
+import { startAuthInterceptor } from "../../services/reconciliationApi";
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 export default function Login() {
   const [mobile, setMobile] = useState("");
@@ -48,7 +49,8 @@ export default function Login() {
           "Invalid mobile number or password."
         );
       }
-
+// Login successful — enable interceptor
+startAuthInterceptor();
       // Backend sets authentication cookies automatically.
       console.log("Login successful:", data);
 
