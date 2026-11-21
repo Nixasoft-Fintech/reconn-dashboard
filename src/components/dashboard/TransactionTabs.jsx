@@ -839,10 +839,10 @@ useEffect(() => {
   // Refresh dashboard/history summary whenever transactions are reloaded
   // (after bank transaction deletion, settlement reversal, or manual settlement)
   useEffect(() => {
-    if (reloadTrigger !== 0 && jobId && onSummaryRefresh) {
+    if (reloadTrigger !== 0 && onSummaryRefresh) {
       onSummaryRefresh();
     }
-  }, [reloadTrigger, jobId, onSummaryRefresh]);
+  }, [reloadTrigger, onSummaryRefresh]);
 
   const handleReverseSettlement = async (record) => {
     const settlementId = record?.settlement_id;
