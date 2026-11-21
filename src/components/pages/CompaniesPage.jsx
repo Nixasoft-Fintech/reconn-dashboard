@@ -8,7 +8,7 @@ import {
 } from "../../services/companyApi";
 import "../../index.css";
 
-const PAGE_SIZE_OPTIONS = [100];
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 export default function CompaniesPage({ onNotify, onAddCompany }) {
   // Add form state
