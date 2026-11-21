@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import TransactionTabs from "../dashboard/TransactionTabs";
@@ -71,55 +71,56 @@ export default function HistoryDetailsPage({ companies = [] }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const loadHistoryDetails = useCallback(async () => {
+    const controller = new AbortController();
+    let isCurrentRequest = true;
+
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const response = await getReconciliationHistoryDetails(jobId, {
+        signal: controller.signal,
+      });
+      if (response.job_id !== jobId) {
+        throw new Error(
+          "The history API returned details for a different or invalid job.",
+        );
+      }
+      if (isCurrentRequest) {
+        setRecord(response);
+      }
+    } catch (requestError) {
+      if (
+        isCurrentRequest &&
+        !(requestError instanceof Error && requestError.name === "AbortError")
+      ) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to load reconciliation job details.",
+        );
+      }
+    } finally {
+      if (isCurrentRequest) {
+        setIsLoading(false);
+      }
+    }
+  }, [jobId]);
+
+  const refreshHistory = useCallback(async () => {
+    await loadHistoryDetails();
+  }, [loadHistoryDetails]);
+
   useEffect(() => {
     if (!jobId) {
       return undefined;
     }
 
-    const controller = new AbortController();
-    let isCurrentRequest = true;
+    loadHistoryDetails();
 
-    const loadDetails = async () => {
-      setIsLoading(true);
-      setError("");
-
-      try {
-        const response = await getReconciliationHistoryDetails(jobId, {
-          signal: controller.signal,
-        });
-        if (response.job_id !== jobId) {
-          throw new Error(
-            "The history API returned details for a different or invalid job.",
-          );
-        }
-        if (isCurrentRequest) {
-          setRecord(response);
-        }
-      } catch (requestError) {
-        if (
-          isCurrentRequest &&
-          !(requestError instanceof Error && requestError.name === "AbortError")
-        ) {
-          setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Unable to load reconciliation job details.",
-          );
-        }
-      } finally {
-        if (isCurrentRequest) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadDetails();
-
-    return () => {
-      isCurrentRequest = false;
-      controller.abort();
-    };
-  }, [jobId]);
+    return () => {};
+  }, [jobId, loadHistoryDetails]);
 
   const currentRecord = record?.job_id === jobId ? record : null;
 
@@ -223,6 +224,7 @@ export default function HistoryDetailsPage({ companies = [] }) {
           key={jobId}
           companies={companies}
           jobId={jobId}
+          onSummaryRefresh={refreshHistory}
         />
       </section>
     </section>

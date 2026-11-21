@@ -836,10 +836,10 @@ useEffect(() => {
 }, [activeTab, jobId, reloadTrigger]);
 
 
-  // Backup: refresh summary whenever transactions are reloaded
-  // (e.g., after bank transaction deletion or settlement reversal)
+  // Refresh dashboard/history summary whenever transactions are reloaded
+  // (after bank transaction deletion, settlement reversal, or manual settlement)
   useEffect(() => {
-    if (reloadTrigger > 0 && jobId && onSummaryRefresh) {
+    if (reloadTrigger !== 0 && jobId && onSummaryRefresh) {
       onSummaryRefresh();
     }
   }, [reloadTrigger, jobId, onSummaryRefresh]);
@@ -858,7 +858,6 @@ useEffect(() => {
       await reverseSettlement(settlementId);
       onNotify?.("success", `Settlement ${settlementId} reversed successfully.`);
       setReloadTrigger((value) => value + 1);
-      await onSummaryRefresh?.();
     } catch (error) {
       const message = error instanceof Error
         ? error.message
@@ -1214,12 +1213,6 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
     alert("Failed to delete bank transaction.");
     return;
   }
-
-  try {
-    await onSummaryRefresh?.();
-  } catch (error) {
-    console.error("Summary refresh failed:", error);
-  }
 };
 
   const handleConfirmSettlement = async (event) => {
@@ -1309,10 +1302,6 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
     setModalRemarks("");
 
     setReloadTrigger((v) => v + 1);
-
-    // Refresh AI summary after successful settlement*
-
-    await onSummaryRefresh?.();
 
   } catch (err) {
 
