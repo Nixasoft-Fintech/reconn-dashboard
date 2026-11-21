@@ -25,7 +25,7 @@ export default function CompaniesPage({ onNotify, onAddCompany }) {
 
   // Pagination state
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(100);
   const [total, setTotal] = useState(null); // backend total na de to null rahega
 
   // Edit state
