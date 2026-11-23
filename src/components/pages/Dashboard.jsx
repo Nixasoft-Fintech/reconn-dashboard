@@ -8,6 +8,7 @@ import {
   SummarySkeleton,
 } from "../dashboard/DataSkeletons";
 import ReconciliationUploadModal from "../dashboard/ReconciliationUploadModal";
+import "./SettlementPage.css";
 import { getDashboardMetrics } from "../../utils/reconciliation";
 import {
   getCompanies,

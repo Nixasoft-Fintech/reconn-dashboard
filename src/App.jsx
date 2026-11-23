@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "./components/pages/Dashboard";
 import Login from "./components/pages/Login";
 import CompaniesPage from "./components/pages/CompaniesPage";
-import SettlementsPage from "./components/pages/SettlementsPage";
+
 import HistoryPage from "./components/pages/HistoryPage";
 import HistoryDetailsPage from "./components/pages/HistoryDetailsPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -42,16 +42,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/settlements"
-          element={
-            <ProtectedRoute>
-              <DashboardLayout>
-                <SettlementsPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+
         <Route
           path="/history"
           element={

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { settlements, reverseSettlement } from "../../services/settlementsApi";
 import "./TransactionTabs.css";
+import "../pages/SettlementPage.css";
 import { Download, Search, X } from "lucide-react";
 
 import TransactionTable from "../tables/TransactionTable";
