@@ -32,6 +32,7 @@ export async function settlements({
   jobId,
   page = 1,
   limit = 100,
+  status = "all",
   signal,
 } = {}) {
   if (!jobId) {
@@ -41,9 +42,11 @@ export async function settlements({
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
+    status: String(status),
   });
 
   const url = `${apiBaseUrl}/api/reconciliation/${encodeURIComponent(jobId)}/manual-settlements?${params}`;
+  console.log("[settlements] request URL:", url);
 
   const response = await fetch(url, {
     method: "GET",

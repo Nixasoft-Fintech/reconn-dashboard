@@ -78,8 +78,29 @@ function formatTransactionDate(dateValue) {
 
 }
 
-function mapTransaction(item, requestedStatus) {
+function mapTransactionStatusClass(value) {
+  if (!value) {
+    return "";
+  }
 
+  const status = String(value).toLowerCase();
+
+  if (/unmatch|mismatch|not_found|fail|error|invalid|duplicate/.test(status)) {
+    return "transaction-status-danger";
+  }
+
+  if (/not_used/.test(status)) {
+    return "transaction-status-warning";
+  }
+
+  if (/match|success|approved|pass/.test(status)) {
+    return "transaction-status-success";
+  }
+
+  return "transaction-status-neutral";
+}
+
+function mapTransaction(item, requestedStatus) {
   const extractedReference = Array.isArray(
 
     item.bank_extracted_references,
@@ -236,60 +257,26 @@ function matchesTransactionSearch(transaction, query) {
 
 const SETTLEMENTS_PAGE_LIMIT = 100;
 
-async function fetchAllSettlementsApi(jobId, { signal } = {}) {
+async function fetchSettlements(jobId, status, page, limit, { signal } = {}) {
   if (typeof jobId !== "string" || !jobId.trim()) {
     throw new Error("Valid Job ID is required.");
   }
 
-  const firstPage = await settlements({
+  const safeStatus = status || "all";
+
+  const response = await settlements({
     jobId,
-    page: 1,
-    limit: SETTLEMENTS_PAGE_LIMIT,
+    page,
+    limit,
+    status: safeStatus,
     signal,
   });
 
-  if (!Array.isArray(firstPage?.items)) {
+  if (!Array.isArray(response?.items)) {
     throw new Error("Settlement API must return an items array.");
   }
 
-  const allItems = [...firstPage.items];
-  const totalPages = Math.max(1, Number(firstPage.total_pages) || 1);
-
-  for (let page = 2; page <= totalPages; page += 1) {
-    if (signal?.aborted) {
-      throw new DOMException("The request was aborted.", "AbortError");
-    }
-
-    const response = await settlements({
-      jobId, // Missing tha
-      page,
-      limit: SETTLEMENTS_PAGE_LIMIT,
-      signal,
-    });
-
-    if (!Array.isArray(response?.items)) {
-      throw new Error("Settlement API must return an items array.");
-    }
-
-    allItems.push(...response.items);
-  }
-
-  return {
-    ...firstPage,
-    items: allItems,
-  };
-}
-
-async function fetchReversedSettlementsApi(jobId, { signal } = {}) {
-  const response = await fetchAllSettlementsApi(jobId, { signal });
-
-  return {
-    ...response,
-    items: response.items.filter(
-      (item) =>
-        String(item.status ?? "").toUpperCase() === "REVERSED"
-    ),
-  };
+  return response;
 }
 
 
@@ -325,15 +312,23 @@ export default function TransactionTabs({
 
     useState("Fund Request");
 
-  const [selectedStatus, setSelectedStatus] =
-
-    useState("Matched");
+  const [activeStatus, setActiveStatus] = useState("Matched");
 
   // "transactions", "all-settlements", or "reversed-settlements"*
 
   const [activeTab, setActiveTab] = useState("transactions");
 
   const [settlementHistory, setSettlementHistory] = useState([]);
+
+  const [settlementPage, setSettlementPage] = useState(1);
+
+  const [settlementPageSize, setSettlementPageSize] = useState(25);
+
+  useEffect(() => {
+    setSettlementPage(1);
+  }, [settlementPageSize]);
+
+  const [settlementTotalPages, setSettlementTotalPages] = useState(0);
 
   const [isLoadingSettlementHistory, setIsLoadingSettlementHistory] =
 
@@ -408,11 +403,71 @@ export default function TransactionTabs({
 
   const [isBankSuggestionsOpen, setIsBankSuggestionsOpen] = useState(false);
 
+  const [bankTxnPage, setBankTxnPage] = useState(1);
+
+  const [bankTxnTotal, setBankTxnTotal] = useState(0);
+
+  const [bankTxnTotalPages, setBankTxnTotalPages] = useState(0);
+
+  const [bankTxnSearchQuery, setBankTxnSearchQuery] = useState("");
+
+  const [debouncedBankTxnSearch, setDebouncedBankTxnSearch] = useState("");
+
+  const [selectedBankTxnObj, setSelectedBankTxnObj] = useState(null);
+
   const [reloadTrigger, setReloadTrigger] = useState(0);
 
   const [searchText, setSearchText] = useState("");
 
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce search input for bank transaction suggestions
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedBankTxnSearch(bankTxnSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [bankTxnSearchQuery]);
+
+  // Load unmatched bank transactions (paginated + server-side search)
+  useEffect(() => {
+    if (!settlementModal || !jobId) return undefined;
+    let cancelled = false;
+    setIsLoadingBankTxns(true);
+    getBankTransactions(jobId, {
+      status: "NOT_FOUND",
+      page: bankTxnPage,
+      limit: 100,
+      search: debouncedBankTxnSearch,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        if (Array.isArray(res?.items)) {
+          setUnmatchedBankTxns(res.items);
+        } else {
+          setUnmatchedBankTxns([]);
+        }
+        setBankTxnTotal(
+          typeof res?.total === "number" ? res.total : 0
+        );
+        setBankTxnTotalPages(
+          typeof res?.total_pages === "number" ? res.total_pages : 0
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUnmatchedBankTxns([]);
+          setBankTxnTotal(0);
+          setBankTxnTotalPages(0);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingBankTxns(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, settlementModal, bankTxnPage, debouncedBankTxnSearch]);
 
   const currentPage =
 
@@ -420,7 +475,7 @@ export default function TransactionTabs({
 
     pageSelection.source === selectedSource &&
 
-    pageSelection.status === selectedStatus
+    pageSelection.status === activeStatus
 
       ? pageSelection.page
 
@@ -428,11 +483,13 @@ export default function TransactionTabs({
 
   const isLiveSource =
 
-    selectedSource === "Fund Request" ||
+    activeTab === "transactions" &&
 
-    selectedSource === "VA Transfer" ||
+    (selectedSource === "Fund Request" ||
 
-    selectedSource === "Account Statement";
+      selectedSource === "VA Transfer" ||
+
+      selectedSource === "Account Statement");
 
   const isLoadedSelectionCurrent =
 
@@ -440,7 +497,7 @@ export default function TransactionTabs({
 
     loadedSelection?.source === selectedSource &&
 
-    loadedSelection?.status === selectedStatus &&
+    loadedSelection?.status === activeStatus &&
 
     loadedSelection?.page === currentPage &&
 
@@ -496,7 +553,7 @@ export default function TransactionTabs({
 
       source: selectedSource,
 
-      status: selectedStatus,
+      status: activeStatus,
 
       page: currentPage,
 
@@ -526,21 +583,8 @@ export default function TransactionTabs({
 
       try {
 
-        const status =
-
-          selectedStatus === "Matched"
-
-            ? "MATCHED"
-
-            : selectedStatus === "Excluded"
-
-              ? "EXCLUDED"
-
-              : selectedStatus === "Rejected"
-
-                ? "REJECTED"
-
-                : "NOT_FOUND";
+        const apiStatus =
+            activeStatus === "Unmatched" ? "NOT_FOUND" : activeStatus.toUpperCase();
 
         const getTransactions =
 
@@ -553,14 +597,14 @@ export default function TransactionTabs({
               ? getVaTransactions
 
               : getBankTransactions;
-
         const response = await getTransactions(jobId, {
 
-          status,
+          status: apiStatus,
 
           page: currentPage,
 
           limit: pageSize,
+
           search: debouncedSearch,
           signal: controller.signal,
 
@@ -570,7 +614,7 @@ export default function TransactionTabs({
 
   source: selectedSource,
 
-  status,
+  status: apiStatus,
 
   page: currentPage,
 
@@ -626,7 +670,7 @@ export default function TransactionTabs({
 
             items: response.items.map((item) =>
 
-              mapTransaction(item, status),
+              mapTransaction(item, apiStatus),
 
             ),
 
@@ -730,7 +774,7 @@ export default function TransactionTabs({
 
     selectedSource,
 
-    selectedStatus,
+    activeStatus,
 
     debouncedSearch,
 
@@ -777,38 +821,33 @@ useEffect(() => {
     setSettlementHistory([]);
 
     try {
-      const response =
+      const status =
         activeTab === "all-settlements"
-          ? await fetchAllSettlementsApi(jobId, {
-              signal: controller.signal,
-            })
+          ? "all"
           : activeTab === "reversed-settlements"
-            ? await fetchReversedSettlementsApi(jobId, {
-                signal: controller.signal,
-              })
-            : await fetchAllSettlementsApi(jobId, {
-                signal: controller.signal,
-              });
+            ? "reversed"
+            : "manual";
+
+      console.log("[settlements] activeTab:", activeTab, "status:", status);
+      const response = await fetchSettlements(
+        jobId,
+        status,
+        settlementPage,
+        settlementPageSize,
+        {
+          signal: controller.signal,
+        },
+      );
 
       if (!Array.isArray(response?.items)) {
         throw new Error("Settlement API must return an items array.");
       }
 
-      const items =
-        activeTab === "reversed-settlements"
-          ? response.items.filter(
-              (item) => String(item.status ?? "").toUpperCase() === "REVERSED"
-            )
-          : activeTab === "manual-settlements"
-            ? response.items.filter(
-                (item) =>
-                  String(item.match_type ?? "").toUpperCase() === "MANUAL" &&
-                  String(item.status ?? "").toUpperCase() === "ACTIVE"
-              )
-            : response.items;
-
       if (isCurrentRequest) {
-        setSettlementHistory(items);
+        setSettlementHistory(response.items);
+        setSettlementTotalPages(
+          Math.max(1, Number(response.total_pages) || 1),
+        );
       }
     } catch (error) {
       if (
@@ -818,7 +857,7 @@ useEffect(() => {
         setSettlementHistoryError(
           error instanceof Error
             ? error.message
-            : "Unable to load settlement records."
+            : "Unable to load settlement records.",
         );
       }
     } finally {
@@ -834,7 +873,7 @@ useEffect(() => {
     isCurrentRequest = false;
     controller.abort();
   };
-}, [activeTab, jobId, reloadTrigger]);
+}, [activeTab, jobId, settlementPage, settlementPageSize, reloadTrigger]);
 
 
   // Refresh dashboard/history summary whenever transactions are reloaded
@@ -893,21 +932,26 @@ useEffect(() => {
 
     let isCurrent = true;
 
-    getCompanies()
+    const loadAllCompanies = async () => {
+      try {
+        let all = [];
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const res = await getCompanies({ page, limit: 500 });
+          if (!isCurrent) return;
+          const items = Array.isArray(res?.items) ? res.items : [];
+          all = all.concat(items);
+          totalPages = typeof res?.total_pages === "number" ? res.total_pages : 1;
+          page += 1;
+        } while (page <= totalPages && isCurrent);
+        if (isCurrent) setFetchedCompanies(all);
+      } catch {
+        // ignore
+      }
+    };
 
-      .then((res) => {
-
-        if (!isCurrent) return;
-
-        if (Array.isArray(res?.items)) {
-
-          setFetchedCompanies(res.items);
-
-        }
-
-      })
-
-      .catch(() => {});
+    loadAllCompanies();
 
     return () => {
 
@@ -995,7 +1039,7 @@ useEffect(() => {
 
     setSelectedSource(source);
 
-    setSelectedStatus(status);
+    setActiveStatus(status);
 
     setSearchText("");
 
@@ -1025,9 +1069,13 @@ useEffect(() => {
 
     setDebouncedSearch("");
 
+    setSettlementPage(1);
+
     setSettlementHistory([]);
 
     setSettlementHistoryError("");
+
+    setSettlementTotalPages(0);
 
   };
 
@@ -1151,31 +1199,19 @@ useEffect(() => {
 
     setIsBankSuggestionsOpen(false);
 
-    if (jobId) {
+    setBankTxnPage(1);
 
-      setIsLoadingBankTxns(true);
+    setBankTxnSearchQuery("");
 
-      getBankTransactions(jobId, { status: "NOT_FOUND", limit: 100 })
+    setDebouncedBankTxnSearch("");
 
-        .then((res) => {
+    setSelectedBankTxnObj(null);
 
-          if (Array.isArray(res?.items)) {
+    setUnmatchedBankTxns([]);
 
-            setUnmatchedBankTxns(res.items);
+    setBankTxnTotal(0);
 
-          }
-
-        })
-
-        .catch(() => {})
-
-        .finally(() => {
-
-          setIsLoadingBankTxns(false);
-
-        });
-
-    }
+    setBankTxnTotalPages(0);
 
   };
   
@@ -1344,11 +1380,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
           status:
 
-            selectedStatus === "Matched"
-
-              ? "MATCHED"
-
-              : "NOT_FOUND",
+            activeStatus === "Unmatched" ? "NOT_FOUND" : activeStatus.toUpperCase(),
 
         });
 
@@ -1522,15 +1554,16 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
   });
 
-  const selectedBankTxn = unmatchedBankTxns.find(
+  const selectedBankTxn =
+    unmatchedBankTxns.find(
 
-    (bt) =>
+      (bt) =>
 
-      bt.bank_transaction_id != null &&
+        bt.bank_transaction_id != null &&
 
-      String(bt.bank_transaction_id).trim() === modalBankTxnId.trim()
+        String(bt.bank_transaction_id).trim() === modalBankTxnId.trim()
 
-  );
+    ) || selectedBankTxnObj;
 
   return (
 
@@ -1686,7 +1719,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "Fund Request" &&
 
-            selectedStatus === "Matched"
+            activeStatus === "Matched"
 
               ? "tab active"
 
@@ -1714,7 +1747,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "Fund Request" &&
 
-            selectedStatus === "Unmatched"
+            activeStatus === "Unmatched"
 
               ? "tab active"
 
@@ -1737,7 +1770,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
           className={
             activeTab === "transactions" &&
             selectedSource === "Fund Request" &&
-            selectedStatus === "Rejected"
+            activeStatus === "Rejected"
               ? "tab active"
               : "tab"
           }
@@ -1754,7 +1787,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "VA Transfer" &&
 
-            selectedStatus === "Matched"
+            activeStatus === "Matched"
 
               ? "tab active"
 
@@ -1782,7 +1815,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "VA Transfer" &&
 
-            selectedStatus === "Unmatched"
+            activeStatus === "Unmatched"
 
               ? "tab active"
 
@@ -1810,7 +1843,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "Account Statement" &&
 
-            selectedStatus === "Matched"
+            activeStatus === "Matched"
 
               ? "tab active"
 
@@ -1838,7 +1871,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
             selectedSource === "Account Statement" &&
 
-            selectedStatus === "Unmatched"
+            activeStatus === "Unmatched"
 
               ? "tab active"
 
@@ -2102,7 +2135,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   source: selectedSource,
 
-                  status: selectedStatus,
+                  status: activeStatus,
 
                   page: 1,
 
@@ -2156,7 +2189,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   source: selectedSource,
 
-                  status: selectedStatus,
+                  status: activeStatus,
 
                   page: currentPage - 1,
 
@@ -2190,7 +2223,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   source: selectedSource,
 
-                  status: selectedStatus,
+                  status: activeStatus,
 
                   page: currentPage + 1,
 
@@ -2286,22 +2319,77 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   <tr>
 
+                    <th className="transaction-group-header" colSpan={10}>Source Transaction Details</th>
+
+                    <th className="transaction-group-header" colSpan={8}>ACSMT Statement Details</th>
+
+                    <th className="transaction-group-header" colSpan={6}>Match Checks</th>
+
+                    <th className="transaction-group-header" colSpan={3}>Settlement Details</th>
+
+                    {(activeTab === "all-settlements" || activeTab === "manual-settlements") && (
+                      <th className="transaction-group-header" colSpan={1}>Action</th>
+                    )}
+
+                  </tr>
+
+                  <tr>
+
+                    <th>Transaction ID</th>
+
+                    <th>Row Number</th>
+
+                    <th>Reference Number</th>
+
+                    <th>Source Amount</th>
+
+                    <th>Source User</th>
+
+                    <th>Source Date</th>
+
+                    <th>Source Status</th>
+
+                    <th>Source Bank</th>
+
+                    <th>Payment Mode</th>
+
+                    <th>Virtual Account Number</th>
+
+                    <th>ACSMT Row</th>
+
+                    <th>ACSMT Bank</th>
+
+                    <th>ACSMT UTR</th>
+
+                    <th>ACSMT Reference Number</th>
+
+                    <th>ACSMT Amount</th>
+
+                    <th>ACSMT User</th>
+
+                    <th>ACSMT Date</th>
+
+                    <th>ACSMT Narration</th>
+
+                    <th>Reference Status</th>
+
+                    <th>Amount Status</th>
+
+                    <th>User Status</th>
+
+                    <th>Date Status</th>
+
+                    <th>Final Status</th>
+
+                    <th>Remark</th>
+
                     <th>Settlement ID</th>
 
-                    <th>Primary Transaction ID</th>
+                    <th>Settled By</th>
 
-                    <th>Bank Transaction ID</th>
+                    <th>Settled At</th>
 
-                    <th>Company</th>
-
-                    <th>Amount</th>
-
-                    <th>Date</th>
-
-                    <th>Status</th>
-
-                    {(activeTab === "all-settlements" ||
-                    activeTab === "manual-settlements") && <th>Action</th>}
+                    {(activeTab === "all-settlements" || activeTab === "manual-settlements") && <th>Action</th>}
 
                   </tr>
 
@@ -2311,58 +2399,90 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   {settlementHistory.map((record, index) => (
 
-                    <tr key={record.settlement_id || record.id || index}>
+                    <tr key={record.settlement_id || record.id || record["Transaction ID"] || index}>
+
+                      <td className="transaction-id">{record["Transaction ID"] ?? "—"}</td>
+
+                      <td>{record["Row Number"] ?? "—"}</td>
+
+                      <td>{record["Reference Number"] ?? "—"}</td>
+
+                      <td className="transaction-amount">{record["Source Amount"] ?? "—"}</td>
+
+                      <td>{record["Source User"] ?? "—"}</td>
+
+                      <td>{record["Source Date"] ?? "—"}</td>
+
+                      <td>{record["Source Status"] ?? "—"}</td>
+
+                      <td>{record["Source Bank"] ?? "—"}</td>
+
+                      <td>{record["Payment Mode"] ?? "—"}</td>
+
+                      <td>{record["Virtual Account Number"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Row"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Bank"] ?? "—"}</td>
+
+                      <td>{record["ACSMT UTR"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Reference Number"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Amount"] ?? "—"}</td>
+
+                      <td>{record["ACSMT User"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Date"] ?? "—"}</td>
+
+                      <td>{record["ACSMT Narration"] ?? "—"}</td>
+
+                      <td>
+                        <span className={`transaction-status ${mapTransactionStatusClass(record["Reference Status"])}`}>
+                          {record["Reference Status"] ?? "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className={`transaction-status ${mapTransactionStatusClass(record["Amount Status"])}`}>
+                          {record["Amount Status"] ?? "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className={`transaction-status ${mapTransactionStatusClass(record["User Status"])}`}>
+                          {record["User Status"] ?? "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className={`transaction-status ${mapTransactionStatusClass(record["Date Status"])}`}>
+                          {record["Date Status"] ?? "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className={`transaction-status ${mapTransactionStatusClass(record["Final Status"])}`}>
+                          {record["Final Status"] ?? "—"}
+                        </span>
+                      </td>
+
+                      <td>{record["Remark"] ?? "—"}</td>
 
                       <td>{record.settlement_id || record.id || "—"}</td>
 
-                      <td>
+                      <td>{record.settled_by ?? "—"}</td>
 
-                        {record.primary?.transaction_id ||
+                      <td>{formatTransactionDate(record.settled_at)}</td>
 
-                          record.primary_transaction_id ||
-
-                          "—"}
-
-                      </td>
-
-                      <td>
-
-                        {record.counterpart?.transaction_id ||
-
-                          record.bank_transaction_id ||
-
-                          "—"}
-
-                      </td>
-
-                      <td>{record.company_name || record.company?.name || "—"}</td>
-
-                      <td>
-
-                        {formatCurrency(
-
-                          record.amount ?? record.settlement_amount,
-
-                        )}
-
-                      </td>
-
-                      <td>
-
-                        {formatTransactionDate(
-
-                          record.created_at || record.settled_at,
-
-                        )}
-
-                      </td>
-
-                      <td>{record.status || "—"}</td>
-
-                      {(activeTab === "all-settlements" ||
-                      activeTab === "manual-settlements") && (
+                      {activeTab === "reversed-settlements" ? (
+                        <td />
+                      ) : (
                         <td>
-                          {String(record.status ?? "").toUpperCase() === "ACTIVE" && (
+                          {record.settled_by == null ||
+                          String(record.settled_by).trim() === "" ? (
+                            <span className="status-badge status-badge-reversed">—</span>
+                          ) : (
                             <button
                               type="button"
                               className="tab"
@@ -2391,6 +2511,48 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
         </div>
 
+      )}
+
+      {(activeTab === "all-settlements" ||
+        activeTab === "reversed-settlements" ||
+        activeTab === "manual-settlements") && (
+        <div className="transaction-pagination">
+          <div>
+            <span>Rows per page</span>
+            <select
+              value={settlementPageSize}
+              onChange={(event) =>
+                setSettlementPageSize(Number(event.target.value))
+              }
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="pagination-button"
+              disabled={settlementPage <= 1}
+              onClick={() => setSettlementPage((p) => p - 1)}
+            >
+              Previous
+            </button>
+            <span className="pagination-current">
+              Page {settlementPage} of {settlementTotalPages}
+            </span>
+            <button
+              type="button"
+              className="pagination-button"
+              disabled={settlementPage >= settlementTotalPages}
+              onClick={() => setSettlementPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       )}
 
       {activeTab === "transactions" && settlementModal && (
@@ -2599,7 +2761,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   </label>
 
-                  {unmatchedBankTxns.length > 0 && (
+                  {(bankTxnTotal > 0 || unmatchedBankTxns.length > 0) && (
 
                     <button
 
@@ -2615,7 +2777,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                         ? "Hide Suggestions"
 
-                        : `Browse Suggestions (${unmatchedBankTxns.length})`}
+                        : `Browse Suggestions (${bankTxnTotal || unmatchedBankTxns.length})`}
 
                     </button>
 
@@ -2637,6 +2799,10 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                     setModalBankTxnId(e.target.value);
 
+                    setBankTxnSearchQuery(e.target.value);
+
+                    setBankTxnPage(1);
+
                     if (modalError) setModalError("");
 
                     if (!isBankSuggestionsOpen) setIsBankSuggestionsOpen(true);
@@ -2645,7 +2811,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                   onFocus={() => {
 
-                    if (unmatchedBankTxns.length > 0) {
+                    if (bankTxnTotal > 0 || unmatchedBankTxns.length > 0) {
 
                       setIsBankSuggestionsOpen(true);
 
@@ -2675,7 +2841,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                           ? "Loading bank transactions..."
 
-                          : `Unmatched Bank Records (${filteredBankTxns.length} ${filteredBankTxns.length === 1 ? "match" : "matches"})`}
+                          : `Unmatched Bank Records (${bankTxnTotal} ${bankTxnTotal === 1 ? "match" : "matches"})`}
 
                       </span>
 
@@ -2699,7 +2865,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                       <div className="settlement-suggestions-empty">Loading records...</div>
 
-                    ) : filteredBankTxns.length === 0 ? (
+                    ) : unmatchedBankTxns.length === 0 ? (
 
                       <div className="settlement-suggestions-empty">
 
@@ -2711,7 +2877,7 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                       <div className="settlement-suggestions-list">
 
-                        {filteredBankTxns.map((bt) => {
+                        {unmatchedBankTxns.map((bt) => {
 
                           const bId = bt.bank_transaction_id != null ? String(bt.bank_transaction_id) : "";
 
@@ -2759,6 +2925,12 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                                 setModalBankTxnId(bId);
 
+                                setSelectedBankTxnObj(bt);
+
+                                setBankTxnSearchQuery('');
+
+                                setBankTxnPage(1);
+
                                 setIsBankSuggestionsOpen(false);
 
                                 if (modalError) setModalError("");
@@ -2776,6 +2948,12 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
                                   e.preventDefault();
 
                                   setModalBankTxnId(bId);
+
+                                  setSelectedBankTxnObj(bt);
+
+                                  setBankTxnSearchQuery('');
+
+                                  setBankTxnPage(1);
 
                                   setIsBankSuggestionsOpen(false);
 
@@ -2839,6 +3017,30 @@ const handleDeleteBankTransaction = async (jobId, bankTransactionId) => {
 
                       </div>
 
+                    )}
+
+                    {bankTxnTotalPages > 1 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderTop: "1px solid var(--border, #e5e7eb)", gap: "8px" }}>
+                        <button
+                          type="button"
+                          className="settlement-toggle-suggestions-btn"
+                          disabled={bankTxnPage <= 1 || isLoadingBankTxns}
+                          onClick={() => setBankTxnPage((p) => Math.max(1, p - 1))}
+                        >
+                          Prev
+                        </button>
+                        <span style={{ fontSize: "0.85rem", color: "var(--muted, #6b7280)" }}>
+                          Page {bankTxnPage} of {bankTxnTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="settlement-toggle-suggestions-btn"
+                          disabled={bankTxnPage >= bankTxnTotalPages || isLoadingBankTxns}
+                          onClick={() => setBankTxnPage((p) => Math.min(bankTxnTotalPages, p + 1))}
+                        >
+                          Next
+                        </button>
+                      </div>
                     )}
 
                   </div>

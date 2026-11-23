@@ -838,12 +838,14 @@ export async function getManualSettlements(
   {
     page = 1,
     limit = 100,
+    status = "all",
     signal,
   } = {}
 ) {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
+    status: String(status),
   });
 
   const url =

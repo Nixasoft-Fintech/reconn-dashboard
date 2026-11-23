@@ -115,24 +115,31 @@ export default function Dashboard() {
 
     const loadCompanies = async () => {
       try {
-        const response = await getCompanies({
-          page: 1,
-          limit: 100,
-        });
+        let all = [];
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const response = await getCompanies({
+            page,
+            limit: 500,
+          });
+
+          if (!isCurrent) return;
+
+          const items = Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response)
+              ? response
+              : [];
+
+          all = all.concat(items);
+          totalPages = typeof response?.total_pages === "number" ? response.total_pages : 1;
+          page += 1;
+        } while (page <= totalPages && isCurrent);
 
         if (!isCurrent) return;
 
-        console.log("COMPANIES API RESPONSE:", response);
-
-        const items = Array.isArray(response?.items)
-          ? response.items
-          : Array.isArray(response)
-            ? response
-            : [];
-
-        console.log("COMPANIES LIST:", items);
-
-        setCompanies(items);
+        setCompanies(all);
       } catch (error) {
         console.error("Failed to load companies:", error);
       }
